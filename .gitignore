@@ -1,0 +1,16 @@
+# Node
+frontend/smartwatch-mobile/node_modules/
+frontend/smartwatch-mobile/.expo/
+frontend/smartwatch-mobile/dist/
+
+# Java / Maven
+backend/target/
+backend/*.log
+backend/backend_running.log
+
+# Env
+frontend/smartwatch-mobile/.env
+
+# OS
+.DS_Store
+Thumbs.db

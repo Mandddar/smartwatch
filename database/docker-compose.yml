@@ -1,0 +1,56 @@
+# Smartwatch Platform - One command to run everything
+# docker-compose up --build
+#
+# Starts: PostgreSQL → Backend → Frontend
+# Vitals auto-generate every 5s when device connected
+
+services:
+  db:
+    image: postgres:15
+    container_name: smartwatch-db
+    environment:
+      POSTGRES_DB: smartwatch
+      POSTGRES_USER: ${DB_USER:-smartwatch}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-smartwatch_secret}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartwatch -d smartwatch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: smartwatch-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/smartwatch
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-smartwatch}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-smartwatch_secret}
+      JWT_SECRET: ${JWT_SECRET:-your-256-bit-secret-key-change-in-production}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ../frontend/smartwatch-mobile
+      dockerfile: Dockerfile
+      args:
+        EXPO_PUBLIC_API_URL: http://localhost:8080
+    container_name: smartwatch-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8081:8081"
+
+volumes:
+  postgres_data:
