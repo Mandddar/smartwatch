@@ -1,9 +1,15 @@
 package com.smartwatch.controller;
 
 import com.smartwatch.dto.VitalAggregateResponse;
+import com.smartwatch.dto.VitalBatchRequest;
+import com.smartwatch.dto.VitalBatchResponse;
 import com.smartwatch.dto.VitalResponse;
 import com.smartwatch.exception.BadRequestException;
+import com.smartwatch.exception.NotFoundException;
+import com.smartwatch.model.User;
+import com.smartwatch.repository.UserRepository;
 import com.smartwatch.service.VitalService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +25,14 @@ import java.util.Map;
 public class VitalController {
 
     private final VitalService vitalService;
+    private final UserRepository userRepository;
+    private final com.smartwatch.repository.SleepSessionRepository sleepSessionRepository;
 
-    public VitalController(VitalService vitalService) {
+    public VitalController(VitalService vitalService, UserRepository userRepository,
+                           com.smartwatch.repository.SleepSessionRepository sleepSessionRepository) {
         this.vitalService = vitalService;
+        this.userRepository = userRepository;
+        this.sleepSessionRepository = sleepSessionRepository;
     }
 
     @GetMapping("/latest")
@@ -89,8 +100,25 @@ public class VitalController {
         return ResponseEntity.ok(vitalService.getVitalsTrends(userId, range));
     }
 
+    /** POST /api/vitals/batch — bulk upload from mobile app (batch sync) */
+    @PostMapping("/batch")
+    public ResponseEntity<VitalBatchResponse> batchUpload(
+            Authentication auth,
+            @Valid @RequestBody VitalBatchRequest request
+    ) {
+        Long userId = (Long) auth.getPrincipal();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        if (request.readings().size() > 5000) {
+            throw new BadRequestException("Maximum 5000 readings per batch");
+        }
+        int received = vitalService.saveBatch(user, request.readings());
+        String syncId = java.util.UUID.randomUUID().toString();
+        return ResponseEntity.ok(new VitalBatchResponse(received, syncId));
+    }
+
     @GetMapping("/sleep/latest")
-    public ResponseEntity<?> getLatestSleep(Authentication auth, @org.springframework.beans.factory.annotation.Autowired com.smartwatch.repository.SleepSessionRepository sleepSessionRepository) {
+    public ResponseEntity<?> getLatestSleep(Authentication auth) {
         Long userId = (Long) auth.getPrincipal();
         return sleepSessionRepository.findFirstByUserIdOrderByStartTimeDesc(userId)
                 .map(s -> ResponseEntity.ok(new com.smartwatch.dto.SleepSessionResponse(s.getId(), s.getStartTime(), s.getEndTime(), s.getQualityScore())))

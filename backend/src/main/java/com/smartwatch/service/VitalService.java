@@ -10,9 +10,12 @@ import com.smartwatch.exception.NotFoundException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import com.smartwatch.dto.VitalBatchRequest;
+
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -133,6 +136,21 @@ public class VitalService {
         v.setSteps(steps);
         v.setTimestamp(timestamp);
         return vitalRepository.save(v);
+    }
+
+    public int saveBatch(User user, List<VitalBatchRequest.Reading> readings) {
+        List<Vital> vitals = new ArrayList<>(readings.size());
+        for (VitalBatchRequest.Reading r : readings) {
+            Vital v = new Vital();
+            v.setUser(user);
+            v.setHeartRate(r.heartRate());
+            v.setSpo2(r.spo2());
+            v.setSteps(r.steps());
+            v.setTimestamp(r.timestamp());
+            vitals.add(v);
+        }
+        vitalRepository.saveAll(vitals);
+        return vitals.size();
     }
 
     public Integer getLastSteps(Long userId) {

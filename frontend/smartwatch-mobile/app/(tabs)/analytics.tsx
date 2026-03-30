@@ -11,8 +11,13 @@ import {
 } from 'react-native';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { getVitalsAggregate, getAlertStats, getVitalsTrends } from '@/lib/api';
+import { getWindow, getBufferSize } from '@/lib/ml/vitalsBuffer';
+import { estimateStress } from '@/lib/ml/models/stressEstimator';
+import { classifyActivity } from '@/lib/ml/models/activityClassifier';
+import type { VitalReading } from '@/lib/ml/types';
 
 const C = {
   bg: '#0b1120',
@@ -99,6 +104,59 @@ export default function AnalyticsScreen() {
   const [dailyData, setDailyData] = useState<AggregateBucket[]>([]);
   const [alertData, setAlertData] = useState<AlertStat[]>([]);
   const [trends, setTrends] = useState<any>(null);
+  const [stressHistory, setStressHistory] = useState<{ time: string; level: number }[]>([]);
+  const [activityBreakdown, setActivityBreakdown] = useState<Record<string, number>>({
+    sedentary: 0, walking: 0, running: 0, sleeping: 0,
+  });
+
+  const fetchMLData = useCallback(async () => {
+    const buffer = getWindow(360);
+    if (buffer.length < 12) return;
+
+    // Build stress history from buffer in 5-min chunks
+    const stressPoints: { time: string; level: number }[] = [];
+    const activityCounts: Record<string, number> = { sedentary: 0, walking: 0, running: 0, sleeping: 0 };
+
+    // Sample every 60 readings (5 min) for stress
+    for (let i = 60; i <= buffer.length; i += 30) {
+      const chunk = buffer.slice(i - 60, i);
+      const hrValues = chunk.map((r) => r.heartRate);
+      const stats = computeStatsLocal(hrValues);
+      let stress = 0;
+      if (stats.mean > 100) stress += 30;
+      else if (stats.mean > 85) stress += 15;
+      else if (stats.mean > 75) stress += 5;
+      if (stats.rmssd < 10) stress += 30;
+      else if (stats.rmssd < 20) stress += 15;
+      if (stats.std > 15 && stats.mean > 85) stress += 15;
+      if (stats.min > 80) stress += 10;
+      stress = Math.min(100, Math.max(0, stress));
+
+      const ts = new Date(chunk[chunk.length - 1].timestamp);
+      stressPoints.push({
+        time: `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}`,
+        level: stress,
+      });
+    }
+    setStressHistory(stressPoints);
+
+    // Activity breakdown from buffer in 12-reading chunks
+    for (let i = 12; i <= buffer.length; i += 12) {
+      const chunk = buffer.slice(i - 12, i);
+      const avgHR = chunk.reduce((s, r) => s + r.heartRate, 0) / chunk.length;
+      let stepDelta = 0;
+      for (let j = 1; j < chunk.length; j++) {
+        stepDelta += Math.max(0, chunk[j].steps - chunk[j - 1].steps);
+      }
+      const avgStep = stepDelta / (chunk.length - 1);
+
+      if (avgHR < 62 && avgStep < 0.5) activityCounts.sleeping++;
+      else if (avgHR > 120 && avgStep > 5) activityCounts.running++;
+      else if (avgStep > 1 || (avgHR > 85 && avgStep > 0.3)) activityCounts.walking++;
+      else activityCounts.sedentary++;
+    }
+    setActivityBreakdown(activityCounts);
+  }, []);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -120,8 +178,8 @@ export default function AnalyticsScreen() {
 
   useEffect(() => {
     setLoading(true);
-    fetchAnalytics().finally(() => setLoading(false));
-  }, [fetchAnalytics]);
+    Promise.all([fetchAnalytics(), fetchMLData()]).finally(() => setLoading(false));
+  }, [fetchAnalytics, fetchMLData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -191,6 +249,13 @@ export default function AnalyticsScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />
       }
     >
+      {/* View Reports Button */}
+      <TouchableOpacity style={styles.reportsBtn} onPress={() => router.push('/(tabs)/reports')} activeOpacity={0.8}>
+        <Ionicons name="document-text" size={18} color={C.primary} />
+        <Text style={styles.reportsBtnText}>Daily Health Reports</Text>
+        <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+      </TouchableOpacity>
+
       {/* Weekly Summary Banner */}
       <View style={styles.summaryBanner}>
         <View style={styles.summaryItem}>
@@ -332,6 +397,80 @@ export default function AnalyticsScreen() {
         )}
       </View>
 
+      {/* ML: Stress Trend */}
+      {stressHistory.length > 1 && (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.iconDot, { backgroundColor: 'rgba(255,208,96,0.12)' }]}>
+              <Ionicons name="pulse" size={16} color="#ffb020" />
+            </View>
+            <View>
+              <Text style={styles.cardTitle}>Stress Level Trend</Text>
+              <Text style={styles.cardSubtitle}>On-device AI analysis</Text>
+            </View>
+            <View style={styles.mlTag}><Text style={styles.mlTagText}>TinyML</Text></View>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <LineChart
+              data={{
+                labels: stressHistory.map((s) => s.time),
+                datasets: [{ data: stressHistory.map((s) => s.level) }],
+              }}
+              width={Math.max(CHART_WIDTH, stressHistory.length * 55)}
+              height={200}
+              chartConfig={{
+                ...mkConfig('#1a1203', '#1a1203', '#ffb020'),
+                decimalPlaces: 0,
+              }}
+              bezier
+              style={styles.chart}
+              yAxisSuffix=""
+              fromZero
+            />
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ML: Activity Breakdown */}
+      {Object.values(activityBreakdown).some((v) => v > 0) && (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.iconDot, { backgroundColor: 'rgba(166,127,250,0.12)' }]}>
+              <Ionicons name="body" size={16} color="#a67ffa" />
+            </View>
+            <View>
+              <Text style={styles.cardTitle}>Activity Breakdown</Text>
+              <Text style={styles.cardSubtitle}>On-device AI classification</Text>
+            </View>
+            <View style={styles.mlTag}><Text style={styles.mlTagText}>TinyML</Text></View>
+          </View>
+          {(() => {
+            const total = Object.values(activityBreakdown).reduce((a, b) => a + b, 0);
+            if (total === 0) return null;
+            const items = [
+              { key: 'sedentary', label: 'Sedentary', icon: 'body' as const, color: '#7a97c0' },
+              { key: 'walking', label: 'Walking', icon: 'walk' as const, color: '#00e5a0' },
+              { key: 'running', label: 'Running', icon: 'bicycle' as const, color: '#ff5370' },
+              { key: 'sleeping', label: 'Sleeping', icon: 'moon' as const, color: '#a67ffa' },
+            ];
+            return items.map((item) => {
+              const count = activityBreakdown[item.key] || 0;
+              const pct = Math.round((count / total) * 100);
+              return (
+                <View key={item.key} style={styles.actRow}>
+                  <Ionicons name={item.icon} size={16} color={item.color} style={{ width: 24 }} />
+                  <Text style={styles.actLabel}>{item.label}</Text>
+                  <View style={styles.actBarBg}>
+                    <View style={[styles.actBarFill, { width: `${pct}%` as any, backgroundColor: item.color }]} />
+                  </View>
+                  <Text style={[styles.actPct, { color: item.color }]}>{pct}%</Text>
+                </View>
+              );
+            });
+          })()}
+        </View>
+      )}
+
       {/* Alert Frequency */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -364,8 +503,22 @@ export default function AnalyticsScreen() {
           </View>
         )}
       </View>
+
     </ScrollView>
   );
+}
+
+function computeStatsLocal(values: number[]) {
+  const n = values.length;
+  if (n === 0) return { mean: 0, std: 0, min: 0, max: 0, rmssd: 0 };
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const std = Math.sqrt(values.reduce((s, v) => s + (v - mean) ** 2, 0) / n);
+  let sumSqDiff = 0;
+  for (let i = 1; i < n; i++) sumSqDiff += (values[i] - values[i - 1]) ** 2;
+  const rmssd = n > 1 ? Math.sqrt(sumSqDiff / (n - 1)) : 0;
+  return { mean, std, min, max, rmssd };
 }
 
 function EmptyChart({ label, icon, color }: { label: string; icon: React.ComponentProps<typeof Ionicons>['name']; color: string }) {
@@ -460,4 +613,46 @@ const styles = StyleSheet.create({
   },
   allClearTitle: { fontSize: 16, fontWeight: '700', color: C.steps },
   allClearSub: { fontSize: 13, color: C.textMuted },
+
+  // ML
+  mlTag: {
+    marginLeft: 'auto' as any,
+    backgroundColor: 'rgba(166,127,250,0.2)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(166,127,250,0.4)',
+  },
+  mlTagText: { fontSize: 9, fontWeight: '800', color: '#a67ffa', letterSpacing: 0.6 },
+  actRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  actLabel: { fontSize: 13, color: C.textSub, width: 72 },
+  actBarBg: {
+    flex: 1,
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  actBarFill: { height: 8, borderRadius: 4 },
+  actPct: { fontSize: 13, fontWeight: '700', width: 36, textAlign: 'right' },
+
+  // Reports button
+  reportsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: C.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+  },
+  reportsBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: C.text },
 });

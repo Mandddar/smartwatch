@@ -10,6 +10,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/lib/auth';
 import { getAlerts } from '@/lib/api';
+import { detectAnomaly } from '@/lib/ml/models/heartRateAnomaly';
+import { hasEnoughData } from '@/lib/ml/vitalsBuffer';
 
 const C = {
   bg: '#0b1120',
@@ -72,9 +74,18 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   );
 }
 
+interface MLAlert {
+  id: string;
+  message: string;
+  timestamp: string;
+  severity: Severity;
+  isML: true;
+}
+
 export default function AlertsScreen() {
   const { token } = useAuth();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [mlAlerts, setMlAlerts] = useState<MLAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -84,6 +95,23 @@ export default function AlertsScreen() {
       setAlerts(data);
     } catch {
       setAlerts([]);
+    }
+    // Check for ML anomalies
+    if (hasEnoughData()) {
+      try {
+        const result = await detectAnomaly();
+        if (result.anomalyDetected && result.anomalyMessage) {
+          setMlAlerts([{
+            id: `ml-${Date.now()}`,
+            message: result.anomalyMessage,
+            timestamp: new Date().toISOString(),
+            severity: result.anomalyScore > 0.8 ? 'CRITICAL' : result.anomalyScore > 0.6 ? 'MEDIUM' : 'LOW',
+            isML: true,
+          }]);
+        } else {
+          setMlAlerts([]);
+        }
+      } catch {}
     }
   }
 
@@ -129,6 +157,37 @@ export default function AlertsScreen() {
               </View>
             )}
           </View>
+        </View>
+      )}
+
+      {/* ML Alerts */}
+      {mlAlerts.length > 0 && (
+        <View style={styles.mlSection}>
+          {mlAlerts.map((a) => {
+            const cfg = SEVERITY_CONFIG[a.severity] ?? SEVERITY_CONFIG.LOW;
+            return (
+              <View key={a.id} style={[styles.card, { borderColor: cfg.border, backgroundColor: cfg.bg }]}>
+                <View style={styles.cardLeft}>
+                  <View style={[styles.iconCircle, { backgroundColor: 'rgba(166,127,250,0.15)', borderColor: 'rgba(166,127,250,0.35)' }]}>
+                    <Ionicons name="hardware-chip-outline" size={22} color="#a67ffa" />
+                  </View>
+                </View>
+                <View style={styles.cardBody}>
+                  <View style={styles.cardTitleRow}>
+                    <View style={styles.mlBadge}>
+                      <Text style={styles.mlBadgeText}>ON-DEVICE AI</Text>
+                    </View>
+                    <Text style={styles.timestamp}>
+                      {new Date(a.timestamp).toLocaleString(undefined, {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                  <Text style={styles.message}>{a.message}</Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
       )}
 
@@ -290,4 +349,16 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 20, fontWeight: '800', color: C.steps },
   emptyHint: { fontSize: 13, color: C.textMuted, textAlign: 'center', lineHeight: 21 },
+
+  // ML Alerts
+  mlSection: { paddingHorizontal: 18, paddingTop: 8, gap: 10 },
+  mlBadge: {
+    backgroundColor: 'rgba(166,127,250,0.2)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(166,127,250,0.4)',
+  },
+  mlBadgeText: { fontSize: 9, fontWeight: '800', color: '#a67ffa', letterSpacing: 0.8 },
 });

@@ -1,19 +1,31 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from '@/lib/auth';
 import { Platform, LogBox } from 'react-native';
+import { initML } from '@/lib/ml';
 
-// Suppress known react-native-svg web warnings from chart library
+// Suppress known warnings from third-party libraries (react-native-chart-kit, react-native-svg)
+LogBox.ignoreLogs(['Unknown event handler property', 'TouchableMixin']);
 if (Platform.OS === 'web') {
-  LogBox.ignoreLogs(['Unknown event handler property']);
-  const origWarn = console.error.bind(console);
-  console.error = (...args: any[]) => {
-    if (typeof args[0] === 'string' && args[0].includes('onResponderTerminate')) return;
+  const SUPPRESS = ['TouchableMixin', 'onResponderTerminate', 'Unknown event handler property', 'onPress'];
+  const origWarn = console.warn.bind(console);
+  const origError = console.error.bind(console);
+  console.warn = (...args: any[]) => {
+    if (typeof args[0] === 'string' && SUPPRESS.some((s) => args[0].includes(s))) return;
     origWarn(...args);
+  };
+  console.error = (...args: any[]) => {
+    if (typeof args[0] === 'string' && SUPPRESS.some((s) => args[0].includes(s))) return;
+    origError(...args);
   };
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    initML().catch(() => {});
+  }, []);
+
   return (
     <AuthProvider>
       <StatusBar style="light" />
