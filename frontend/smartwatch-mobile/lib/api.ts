@@ -139,3 +139,46 @@ export async function getLatestSleep(token: string | null) {
   return res.json();
 }
 
+/** Batch upload vitals to backend (sync) */
+export async function uploadVitalsBatch(
+  token: string | null,
+  readings: { heartRate: number; spo2: number; steps: number; timestamp: string }[]
+) {
+  const res = await apiFetch('/api/vitals/batch', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ readings }),
+  });
+  if (!res.ok) throw new Error('Batch upload failed');
+  return res.json() as Promise<{ received: number; syncId: string }>;
+}
+
+/** Get daily health report */
+export async function getDailyReport(token: string | null, date?: string) {
+  const query = date ? `?date=${date}` : '';
+  const res = await apiFetch(`/api/reports/daily${query}`, { token });
+  if (!res.ok) throw new Error('Failed to get daily report');
+  return res.json();
+}
+
+/** Get summary report (12h, 24h, 48h) */
+export async function getSummaryReport(token: string | null, range: '12h' | '24h' | '48h' = '12h') {
+  const res = await apiFetch(`/api/reports/summary?range=${range}`, { token });
+  if (!res.ok) throw new Error('Failed to get summary report');
+  return res.json();
+}
+
+/** Get personal baselines */
+export async function getBaselines(token: string | null) {
+  const res = await apiFetch('/api/baselines', { token });
+  if (!res.ok) throw new Error('Failed to get baselines');
+  return res.json();
+}
+
+/** Get baseline personalization status */
+export async function getBaselineStatus(token: string | null) {
+  const res = await apiFetch('/api/baselines/status', { token });
+  if (!res.ok) throw new Error('Failed to get baseline status');
+  return res.json();
+}
+

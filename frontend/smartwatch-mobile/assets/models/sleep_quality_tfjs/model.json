@@ -1,0 +1,62 @@
+{
+  "format": "graph-model",
+  "generatedBy": "VitalWatch Training",
+  "convertedBy": "manual",
+  "modelTopology": {
+    "note": "Use statistical fallback - SavedModel format"
+  },
+  "weightsManifest": [
+    {
+      "paths": [
+        "group1-shard1of1.bin"
+      ],
+      "weights": [
+        {
+          "name": "sequential_2/dense_12/kernel:0",
+          "shape": [
+            6,
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "sequential_2/dense_12/bias:0",
+          "shape": [
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "sequential_2/dense_13/kernel:0",
+          "shape": [
+            8,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "sequential_2/dense_13/bias:0",
+          "shape": [
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "sequential_2/dense_14/kernel:0",
+          "shape": [
+            4,
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "sequential_2/dense_14/bias:0",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        }
+      ]
+    }
+  ]
+}

@@ -13,6 +13,9 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/lib/auth';
 import { getPreferences, updatePreferences } from '@/lib/api';
+import { getModelStatus } from '@/lib/ml';
+import { getPendingSyncCount } from '@/lib/sync/syncService';
+import { computeLocalBaselines } from '@/lib/ml/baselines';
 
 function confirmAction(title: string, message: string, onConfirm: () => void) {
   if (Platform.OS === 'web') {
@@ -208,6 +211,58 @@ export default function ProfileScreen() {
         <InfoRow label="Live simulation" value="Every 1.5 seconds" highlight />
       </View>
 
+      {/* TinyML Status */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={[styles.cardIconBox, { backgroundColor: 'rgba(166,127,250,0.12)' }]}>
+            <Ionicons name="hardware-chip-outline" size={16} color="#a67ffa" />
+          </View>
+          <Text style={styles.cardTitle}>On-Device AI</Text>
+          <View style={styles.mlBadge}>
+            <Text style={styles.mlBadgeText}>TinyML</Text>
+          </View>
+        </View>
+        {(() => {
+          const status = getModelStatus();
+          const pendingSync = getPendingSyncCount();
+          const bl = computeLocalBaselines();
+          return (
+            <>
+              <InfoRow label="Status" value={status.initialized ? 'Active' : 'Initializing...'} highlight={status.initialized} />
+              <View style={styles.separator} />
+              <InfoRow label="Models loaded" value={String(status.modelsLoaded.length)} />
+              <View style={styles.separator} />
+              <InfoRow label="Data buffer" value={`${status.bufferSize} readings`} />
+              <View style={styles.separator} />
+              <InfoRow label="Pending sync" value={`${pendingSync} readings`} />
+              <View style={styles.separator} />
+              <InfoRow label="Baselines" value={bl.isPersonalized ? 'Personalized' : `Learning ${bl.learningProgress}%`} highlight={bl.isPersonalized} />
+              <View style={styles.separator} />
+              {bl.hrResting && (
+                <>
+                  <InfoRow label="Your resting HR" value={`${bl.hrResting.lowerBound}-${bl.hrResting.upperBound} bpm`} />
+                  <View style={styles.separator} />
+                </>
+              )}
+              <InfoRow label="Last inference" value={
+                status.lastInferenceTime
+                  ? new Date(status.lastInferenceTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  : 'Never'
+              } />
+              <View style={styles.separator} />
+              <View style={styles.modelList}>
+                {status.modelsLoaded.map((m) => (
+                  <View key={m} style={styles.modelChip}>
+                    <View style={styles.modelDot} />
+                    <Text style={styles.modelChipText}>{m}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          );
+        })()}
+      </View>
+
       {/* Sign Out */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
         <View style={styles.logoutInner}>
@@ -361,4 +416,30 @@ const styles = StyleSheet.create({
   logoutText: { color: C.hr, fontSize: 15, fontWeight: '700' },
 
   versionFooter: { textAlign: 'center', fontSize: 12, color: C.textMuted, marginTop: 4 },
+
+  // ML
+  mlBadge: {
+    marginLeft: 'auto' as any,
+    backgroundColor: 'rgba(166,127,250,0.2)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(166,127,250,0.4)',
+  },
+  mlBadgeText: { fontSize: 9, fontWeight: '800', color: '#a67ffa', letterSpacing: 0.8 },
+  modelList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  modelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,229,160,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,160,0.2)',
+  },
+  modelDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00e5a0' },
+  modelChipText: { fontSize: 11, color: '#7a97c0', fontWeight: '600' },
 });

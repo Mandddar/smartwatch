@@ -19,9 +19,11 @@ public class RuleEngine {
     private static final int SUSTAINED_READINGS = 3;
 
     private final VitalRepository vitalRepository;
+    private final BaselineService baselineService;
 
-    public RuleEngine(VitalRepository vitalRepository) {
+    public RuleEngine(VitalRepository vitalRepository, BaselineService baselineService) {
         this.vitalRepository = vitalRepository;
+        this.baselineService = baselineService;
     }
 
     public static class AlertData {
@@ -41,9 +43,20 @@ public class RuleEngine {
         List<AlertData> alerts = new ArrayList<>();
         if (vital == null) return alerts;
 
-        int age = calculateAge(user.getDateOfBirth());
-        int maxHR = 220 - age;
-        int threshold = (int) (maxHR * HR_THRESHOLD_PERCENT);
+        // Try personalized threshold first, fall back to age-based
+        Integer personalThreshold = baselineService.getPersonalizedHRThreshold(user.getId());
+        int threshold;
+        String thresholdSource;
+
+        if (personalThreshold != null) {
+            threshold = personalThreshold;
+            thresholdSource = "personal baseline";
+        } else {
+            int age = calculateAge(user.getDateOfBirth());
+            int maxHR = 220 - age;
+            threshold = (int) (maxHR * HR_THRESHOLD_PERCENT);
+            thresholdSource = "age-based (220-age)";
+        }
 
         if (enableHeartRateAlerts && vital.getHeartRate() != null && vital.getHeartRate() > threshold) {
             List<Vital> recentVitals = vitalRepository.findByUserIdOrderByTimestampDesc(user.getId(), PageRequest.of(0, SUSTAINED_READINGS));
@@ -56,7 +69,8 @@ public class RuleEngine {
                 else if (vital.getHeartRate() > threshold + 15) severity = Alert.Severity.MEDIUM;
 
                 alerts.add(new AlertData(
-                        String.format("Sustained elevated heart rate: %d bpm (threshold: %d bpm)", vital.getHeartRate(), threshold),
+                        String.format("Sustained elevated heart rate: %d bpm (threshold: %d bpm, %s)",
+                                vital.getHeartRate(), threshold, thresholdSource),
                         severity
                 ));
             }

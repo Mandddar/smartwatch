@@ -17,10 +17,7 @@ export default function TabsLayout() {
           paddingBottom: 10,
           paddingTop: 6,
         },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
+        tabBarShowLabel: false,
         headerStyle: { backgroundColor: '#0b1120' },
         headerTintColor: '#e8f0fe',
         headerTitleStyle: { fontWeight: '800', fontSize: 17, letterSpacing: 0.3 },
@@ -44,6 +41,13 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'stats-chart' : 'stats-chart-outline'} size={size} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          title: 'Reports',
+          href: null,
         }}
       />
       <Tabs.Screen

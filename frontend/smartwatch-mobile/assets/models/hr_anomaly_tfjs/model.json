@@ -1,0 +1,107 @@
+{
+  "format": "graph-model",
+  "generatedBy": "VitalWatch Training",
+  "convertedBy": "manual",
+  "modelTopology": {
+    "note": "Use statistical fallback - SavedModel format"
+  },
+  "weightsManifest": [
+    {
+      "paths": [
+        "group1-shard1of1.bin"
+      ],
+      "weights": [
+        {
+          "name": "dense/kernel:0",
+          "shape": [
+            60,
+            32
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense/bias:0",
+          "shape": [
+            32
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_1/kernel:0",
+          "shape": [
+            32,
+            16
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_1/bias:0",
+          "shape": [
+            16
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_2/kernel:0",
+          "shape": [
+            16,
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_2/bias:0",
+          "shape": [
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_3/kernel:0",
+          "shape": [
+            8,
+            16
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_3/bias:0",
+          "shape": [
+            16
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_4/kernel:0",
+          "shape": [
+            16,
+            32
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_4/bias:0",
+          "shape": [
+            32
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_5/kernel:0",
+          "shape": [
+            32,
+            60
+          ],
+          "dtype": "float32"
+        },
+        {
+          "name": "dense_5/bias:0",
+          "shape": [
+            60
+          ],
+          "dtype": "float32"
+        }
+      ]
+    }
+  ]
+}
