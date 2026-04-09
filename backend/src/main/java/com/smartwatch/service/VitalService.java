@@ -11,8 +11,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.smartwatch.dto.VitalBatchRequest;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -138,9 +138,16 @@ public class VitalService {
         return vitalRepository.save(v);
     }
 
+    @Transactional
     public int saveBatch(User user, List<VitalBatchRequest.Reading> readings) {
         List<Vital> vitals = new ArrayList<>(readings.size());
         for (VitalBatchRequest.Reading r : readings) {
+            // Validate vital ranges — skip invalid readings
+            if (r.heartRate() < 20 || r.heartRate() > 250) continue;
+            if (r.spo2() < 50 || r.spo2() > 100) continue;
+            if (r.steps() < 0) continue;
+            if (r.timestamp() == null) continue;
+
             Vital v = new Vital();
             v.setUser(user);
             v.setHeartRate(r.heartRate());
@@ -149,7 +156,9 @@ public class VitalService {
             v.setTimestamp(r.timestamp());
             vitals.add(v);
         }
-        vitalRepository.saveAll(vitals);
+        if (!vitals.isEmpty()) {
+            vitalRepository.saveAll(vitals);
+        }
         return vitals.size();
     }
 

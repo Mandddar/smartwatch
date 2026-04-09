@@ -21,13 +21,13 @@ const C = {
   bg: '#0b1120',
   card: '#141f35',
   cardBorder: '#1e3356',
-  primary: '#4d8af0',
+  primary: '#5a7fbf',
   text: '#e8f0fe',
   textSub: '#7a97c0',
   textMuted: '#3d5478',
   inputBg: '#0d1829',
   inputBorder: '#1e3356',
-  hr: '#ff5370',
+  hr: '#c75e6b',
 };
 
 const GENDERS = ['Male', 'Female', 'Other'];
@@ -311,7 +311,7 @@ export default function RegisterScreen() {
             ]}>
               <Ionicons name="shield-checkmark-outline" size={18} color={
                 confirmPassword.length > 0
-                  ? password === confirmPassword ? '#00e5a0' : C.hr
+                  ? password === confirmPassword ? '#5ba88a' : C.hr
                   : iconColor('confirm')
               } style={styles.inputIcon} />
               <TextInput
@@ -424,10 +424,10 @@ const styles = StyleSheet.create({
   brandSection: { alignItems: 'center', marginBottom: 28 },
   iconWrapper: {
     width: 80, height: 80, borderRadius: 24,
-    backgroundColor: 'rgba(77,138,240,0.15)',
+    backgroundColor: 'rgba(90,127,191,0.15)',
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 16, borderWidth: 1.5,
-    borderColor: 'rgba(77,138,240,0.35)',
+    borderColor: 'rgba(90,127,191,0.35)',
   },
   brandName: { fontSize: 32, fontWeight: '800', color: C.text, letterSpacing: 0.5 },
   brandTagline: { fontSize: 14, color: C.textSub, marginTop: 5 },
@@ -449,14 +449,14 @@ const styles = StyleSheet.create({
     backgroundColor: C.inputBg, borderRadius: 13,
     borderWidth: 1.5, borderColor: C.inputBorder,
   },
-  inputWrapperFocused: { borderColor: C.primary, backgroundColor: 'rgba(77,138,240,0.06)' },
-  inputWrapperError: { borderColor: C.hr, backgroundColor: 'rgba(255,83,112,0.05)' },
+  inputWrapperFocused: { borderColor: C.primary, backgroundColor: 'rgba(90,127,191,0.06)' },
+  inputWrapperError: { borderColor: C.hr, backgroundColor: 'rgba(199,94,107,0.05)' },
   inputIcon: { paddingHorizontal: 13 },
   input: { flex: 1, paddingVertical: 14, paddingRight: 14, fontSize: 15, color: C.text },
   inputWithToggle: { paddingRight: 0 },
   eyeBtn: { paddingHorizontal: 14, paddingVertical: 14 },
   errorHint: { fontSize: 12, color: C.hr, marginTop: 5, marginLeft: 4 },
-  successHint: { fontSize: 12, color: '#00e5a0', marginTop: 5, marginLeft: 4 },
+  successHint: { fontSize: 12, color: '#5ba88a', marginTop: 5, marginLeft: 4 },
 
   dobBtn: { justifyContent: 'space-between' },
   dobText: { flex: 1, fontSize: 15, color: C.text, paddingVertical: 14 },
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: C.inputBorder,
     alignItems: 'center', backgroundColor: C.inputBg,
   },
-  genderBtnActive: { backgroundColor: 'rgba(77,138,240,0.15)', borderColor: C.primary },
+  genderBtnActive: { backgroundColor: 'rgba(90,127,191,0.15)', borderColor: C.primary },
   genderBtnText: { fontSize: 14, fontWeight: '600', color: C.textMuted },
   genderBtnTextActive: { color: C.primary },
 
@@ -515,13 +515,13 @@ const dp = StyleSheet.create({
     height: 44, justifyContent: 'center', alignItems: 'center',
     borderRadius: 10, marginVertical: 1,
   },
-  colItemActive: { backgroundColor: 'rgba(77,138,240,0.2)', borderWidth: 1, borderColor: 'rgba(77,138,240,0.4)' },
+  colItemActive: { backgroundColor: 'rgba(90,127,191,0.2)', borderWidth: 1, borderColor: 'rgba(90,127,191,0.4)' },
   colItemText: { fontSize: 15, color: '#7a97c0', fontWeight: '500' },
-  colItemTextActive: { color: '#4d8af0', fontWeight: '700' },
+  colItemTextActive: { color: '#5a7fbf', fontWeight: '700' },
   confirmBtn: {
-    backgroundColor: '#4d8af0', borderRadius: 13, padding: 15,
+    backgroundColor: '#5a7fbf', borderRadius: 13, padding: 15,
     alignItems: 'center', marginTop: 16,
-    shadowColor: '#4d8af0', shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#5a7fbf', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 10, elevation: 6,
   },
   confirmBtnText: { color: '#e8f0fe', fontSize: 16, fontWeight: '700' },

@@ -66,5 +66,6 @@ public class User {
     public void setDevice(Device device) { this.device = device; }
     public NotificationPreference getNotificationPreference() { return notificationPreference; }
     public void setNotificationPreference(NotificationPreference np) { this.notificationPreference = np; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
     public List<Alert> getAlerts() { return alerts; }
 }

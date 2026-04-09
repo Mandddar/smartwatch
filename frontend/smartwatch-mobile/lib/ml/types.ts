@@ -9,6 +9,13 @@ export interface VitalReading {
   timestamp: number; // epoch ms
 }
 
+export interface InsightDetail {
+  title: string;
+  reason: string;       // WHY is this happening
+  recommendation: string; // WHAT should you do
+  severity: 'info' | 'warning' | 'critical';
+}
+
 export interface MLInsights {
   /** Heart rate anomaly detection */
   anomalyDetected: boolean;
@@ -25,6 +32,12 @@ export interface MLInsights {
 
   /** Sleep quality (only available when sleep session data exists) */
   predictedSleepQuality: number | null; // 0-100
+
+  /** Detailed actionable insights */
+  details: InsightDetail[];
+
+  /** Predictive warnings — things that MIGHT happen soon */
+  predictions: InsightDetail[];
 }
 
 export interface ModelStatus {
@@ -43,4 +56,6 @@ export const EMPTY_INSIGHTS: MLInsights = {
   stressLevel: 0,
   stressLabel: 'low',
   predictedSleepQuality: null,
+  details: [],
+  predictions: [],
 };

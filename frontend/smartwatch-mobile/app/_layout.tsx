@@ -2,8 +2,10 @@ import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from '@/lib/auth';
+import { ThemeProvider } from '@/lib/theme';
 import { Platform, LogBox } from 'react-native';
 import { initML } from '@/lib/ml';
+import { registerBackgroundSync } from '@/lib/sync/backgroundSync';
 
 // Suppress known warnings from third-party libraries (react-native-chart-kit, react-native-svg)
 LogBox.ignoreLogs(['Unknown event handler property', 'TouchableMixin']);
@@ -23,10 +25,12 @@ if (Platform.OS === 'web') {
 
 export default function RootLayout() {
   useEffect(() => {
-    initML().catch(() => {});
+    initML().catch((e) => console.warn('[ML] Init failed:', e));
+    registerBackgroundSync().catch((e) => console.warn('[Sync] Background sync registration failed:', e));
   }, []);
 
   return (
+    <ThemeProvider>
     <AuthProvider>
       <StatusBar style="light" />
       <Stack
@@ -44,5 +48,6 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
     </AuthProvider>
+    </ThemeProvider>
   );
 }

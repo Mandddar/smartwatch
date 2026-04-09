@@ -64,6 +64,31 @@ public class AlertService {
         return alertRepository.save(a);
     }
 
+    public AlertResponse markAsRead(Long userId, Long alertId) {
+        Alert alert = alertRepository.findById(alertId)
+                .orElseThrow(() -> new NotFoundException("Alert not found"));
+        if (!alert.getUser().getId().equals(userId)) throw new NotFoundException("Alert not found");
+        alert.setRead(true);
+        return toResponse(alertRepository.save(alert));
+    }
+
+    public void markAllAsRead(Long userId) {
+        List<Alert> alerts = alertRepository.findByUserIdOrderByTimestampDesc(userId);
+        alerts.stream().filter(a -> !a.isRead()).forEach(a -> a.setRead(true));
+        alertRepository.saveAll(alerts);
+    }
+
+    public void deleteAlert(Long userId, Long alertId) {
+        Alert alert = alertRepository.findById(alertId)
+                .orElseThrow(() -> new NotFoundException("Alert not found"));
+        if (!alert.getUser().getId().equals(userId)) throw new NotFoundException("Alert not found");
+        alertRepository.delete(alert);
+    }
+
+    public long getUnreadCount(Long userId) {
+        return alertRepository.countByUserIdAndReadFalse(userId);
+    }
+
     private AlertResponse toResponse(Alert a) {
         return new AlertResponse(a.getId(), a.getMessage(), a.getTimestamp(), a.isRead(), a.getSeverity().name());
     }

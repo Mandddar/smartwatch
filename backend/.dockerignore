@@ -1,3 +1,7 @@
 target/
 .git
 *.md
+*.log
+*.txt
+.idea/
+.vscode/

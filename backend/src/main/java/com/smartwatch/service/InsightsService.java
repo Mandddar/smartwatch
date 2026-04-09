@@ -42,9 +42,9 @@ public class InsightsService {
             return insights;
         }
 
-        double avgHr24 = last24hVitals.stream().mapToInt(Vital::getHeartRate).average().orElse(0);
-        double avgHrPrev24 = previous24hVitals.stream().mapToInt(Vital::getHeartRate).average().orElse(0);
-        double avgHrWeek = weeklyVitals.stream().mapToInt(Vital::getHeartRate).average().orElse(0);
+        double avgHr24 = last24hVitals.stream().filter(v -> v.getHeartRate() != null).mapToInt(Vital::getHeartRate).average().orElse(0);
+        double avgHrPrev24 = previous24hVitals.stream().filter(v -> v.getHeartRate() != null).mapToInt(Vital::getHeartRate).average().orElse(0);
+        double avgHrWeek = weeklyVitals.stream().filter(v -> v.getHeartRate() != null).mapToInt(Vital::getHeartRate).average().orElse(0);
 
         if (avgHrPrev24 > 0) {
             double percentChange = ((avgHr24 - avgHrPrev24) / avgHrPrev24) * 100;
@@ -62,12 +62,15 @@ public class InsightsService {
         }
 
         // Abnormal readings check (HR > 100)
-        long abnormalCount = last24hVitals.stream().filter(v -> v.getHeartRate() > 100).count();
+        long abnormalCount = last24hVitals.stream().filter(v -> v.getHeartRate() != null && v.getHeartRate() > 100).count();
         if (abnormalCount > 5) {
             insights.add(String.format("We detected %d instances of elevated heart rate (>100 bpm) in the last 24 hours.", abnormalCount));
         }
 
-        int totalSteps24h = Math.max(0, last24hVitals.get(last24hVitals.size() - 1).getSteps() - last24hVitals.get(0).getSteps());
+        List<Vital> stepVitals = last24hVitals.stream().filter(v -> v.getSteps() != null).toList();
+        int totalSteps24h = stepVitals.size() >= 2
+                ? Math.max(0, stepVitals.get(stepVitals.size() - 1).getSteps() - stepVitals.get(0).getSteps())
+                : 0;
         if (totalSteps24h > 10000) {
             insights.add("Great job! You've been very active today with over 10,000 steps logged.");
         } else if (totalSteps24h < 1000) {

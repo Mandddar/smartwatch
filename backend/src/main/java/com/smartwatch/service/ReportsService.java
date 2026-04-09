@@ -41,42 +41,47 @@ public class ReportsService {
 
         List<Vital> vitals = vitalRepository.findByUserIdAndTimestampBetweenOrderByTimestampAsc(userId, start, end);
 
+        // Filter vitals with valid readings for safe stream operations
+        List<Vital> hrVitals = vitals.stream().filter(v -> v.getHeartRate() != null).toList();
+        List<Vital> spo2Vitals = vitals.stream().filter(v -> v.getSpo2() != null).toList();
+        List<Vital> stepVitals = vitals.stream().filter(v -> v.getSteps() != null).toList();
+
         // Heart rate summary
         DailyReportResponse.HeartRateSummary hrSummary;
-        if (vitals.isEmpty()) {
+        if (hrVitals.isEmpty()) {
             hrSummary = new DailyReportResponse.HeartRateSummary(0, 0, 0, 0);
         } else {
-            double avgHr = vitals.stream().mapToInt(Vital::getHeartRate).average().orElse(0);
-            int minHr = vitals.stream().mapToInt(Vital::getHeartRate).min().orElse(0);
-            int maxHr = vitals.stream().mapToInt(Vital::getHeartRate).max().orElse(0);
-            long elevated = vitals.stream().filter(v -> v.getHeartRate() > 100).count();
+            double avgHr = hrVitals.stream().mapToInt(Vital::getHeartRate).average().orElse(0);
+            int minHr = hrVitals.stream().mapToInt(Vital::getHeartRate).min().orElse(0);
+            int maxHr = hrVitals.stream().mapToInt(Vital::getHeartRate).max().orElse(0);
+            long elevated = hrVitals.stream().filter(v -> v.getHeartRate() > 100).count();
             hrSummary = new DailyReportResponse.HeartRateSummary(
                     Math.round(avgHr * 10.0) / 10.0, minHr, maxHr, elevated);
         }
 
         // SpO2 summary
         DailyReportResponse.SpO2Summary spo2Summary;
-        if (vitals.isEmpty()) {
+        if (spo2Vitals.isEmpty()) {
             spo2Summary = new DailyReportResponse.SpO2Summary(0, 0, 0);
         } else {
-            double avgSpo2 = vitals.stream().mapToInt(Vital::getSpo2).average().orElse(0);
-            int minSpo2 = vitals.stream().mapToInt(Vital::getSpo2).min().orElse(0);
-            long lowReadings = vitals.stream().filter(v -> v.getSpo2() < 95).count();
+            double avgSpo2 = spo2Vitals.stream().mapToInt(Vital::getSpo2).average().orElse(0);
+            int minSpo2 = spo2Vitals.stream().mapToInt(Vital::getSpo2).min().orElse(0);
+            long lowReadings = spo2Vitals.stream().filter(v -> v.getSpo2() < 95).count();
             spo2Summary = new DailyReportResponse.SpO2Summary(
                     Math.round(avgSpo2 * 10.0) / 10.0, minSpo2, lowReadings);
         }
 
         // Steps summary
         DailyReportResponse.StepsSummary stepsSummary;
-        if (vitals.isEmpty()) {
+        if (stepVitals.isEmpty()) {
             stepsSummary = new DailyReportResponse.StepsSummary(0, 0);
         } else {
-            int totalSteps = vitals.get(vitals.size() - 1).getSteps() - vitals.get(0).getSteps();
+            int totalSteps = stepVitals.get(stepVitals.size() - 1).getSteps() - stepVitals.get(0).getSteps();
             totalSteps = Math.max(0, totalSteps);
             // Estimate active minutes: count 5-second intervals where steps incremented
             int activeIntervals = 0;
-            for (int i = 1; i < vitals.size(); i++) {
-                if (vitals.get(i).getSteps() > vitals.get(i - 1).getSteps()) {
+            for (int i = 1; i < stepVitals.size(); i++) {
+                if (stepVitals.get(i).getSteps() > stepVitals.get(i - 1).getSteps()) {
                     activeIntervals++;
                 }
             }
@@ -128,18 +133,23 @@ public class ReportsService {
             return new SummaryReportResponse(range, 0, 0, 0, 0, "stable");
         }
 
-        double avgHr = vitals.stream().mapToInt(Vital::getHeartRate).average().orElse(0);
-        double avgSpo2 = vitals.stream().mapToInt(Vital::getSpo2).average().orElse(0);
-        int totalSteps = Math.max(0, vitals.get(vitals.size() - 1).getSteps() - vitals.get(0).getSteps());
+        double avgHr = vitals.stream().filter(v -> v.getHeartRate() != null).mapToInt(Vital::getHeartRate).average().orElse(0);
+        double avgSpo2 = vitals.stream().filter(v -> v.getSpo2() != null).mapToInt(Vital::getSpo2).average().orElse(0);
+        int totalSteps = 0;
+        List<Vital> stepsVitals = vitals.stream().filter(v -> v.getSteps() != null).toList();
+        if (!stepsVitals.isEmpty()) {
+            totalSteps = Math.max(0, stepsVitals.get(stepsVitals.size() - 1).getSteps() - stepsVitals.get(0).getSteps());
+        }
 
         int alertCount = (int) alertRepository.findByUserIdOrderByTimestampDesc(userId).stream()
                 .filter(a -> a.getTimestamp().isAfter(since))
                 .count();
 
         // Simple trend: compare first half avg HR to second half
-        int mid = vitals.size() / 2;
-        double firstHalfAvg = vitals.subList(0, mid).stream().mapToInt(Vital::getHeartRate).average().orElse(0);
-        double secondHalfAvg = vitals.subList(mid, vitals.size()).stream().mapToInt(Vital::getHeartRate).average().orElse(0);
+        List<Vital> hrVitals = vitals.stream().filter(v -> v.getHeartRate() != null).toList();
+        int mid = hrVitals.size() / 2;
+        double firstHalfAvg = mid > 0 ? hrVitals.subList(0, mid).stream().mapToInt(Vital::getHeartRate).average().orElse(0) : 0;
+        double secondHalfAvg = mid > 0 ? hrVitals.subList(mid, hrVitals.size()).stream().mapToInt(Vital::getHeartRate).average().orElse(0) : 0;
         String trend;
         if (firstHalfAvg > 0 && secondHalfAvg > firstHalfAvg * 1.05) trend = "increasing";
         else if (firstHalfAvg > 0 && secondHalfAvg < firstHalfAvg * 0.95) trend = "decreasing";

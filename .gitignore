@@ -2,15 +2,37 @@
 frontend/smartwatch-mobile/node_modules/
 frontend/smartwatch-mobile/.expo/
 frontend/smartwatch-mobile/dist/
+frontend/smartwatch-mobile/web-build/
 
 # Java / Maven
 backend/target/
 backend/*.log
-backend/backend_running.log
+backend/*.txt
 
-# Env
+# Python / ML
+ml-training/__pycache__/
+ml-training/*.pyc
+ml-training/venv/
+ml-training/.venv/
+
+# Env / Secrets
 frontend/smartwatch-mobile/.env
+.env
+*.env.local
+
+# Logs
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# Claude Code
+.claude/

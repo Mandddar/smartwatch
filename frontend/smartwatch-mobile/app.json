@@ -2,10 +2,16 @@
   "expo": {
     "name": "VitalWatch",
     "slug": "smartwatch-mobile",
-    "version": "1.0.0",
+    "version": "1.0.0-beta.1",
     "scheme": "smartwatch",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3509c17c-3c4d-4333-a8b7-5778acefe308"
+    },
     "web": {
       "bundler": "metro"
     },
@@ -14,22 +20,9 @@
       "expo-secure-store",
       "expo-asset",
       "expo-font",
-      [
-        "react-native-health-connect",
-        {
-          "requestPermissionsBackCompat": true
-        }
-      ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "minSdkVersion": 26
-          }
-        }
-      ]
+      "expo-updates",
+      "expo-background-fetch",
+      "expo-task-manager"
     ],
     "extra": {
       "router": {
@@ -41,14 +34,10 @@
     },
     "android": {
       "package": "com.invincible1.smartwatchmobile",
-      "versionCode": 1,
+      "versionCode": 2,
       "permissions": [
         "INTERNET",
-        "ACCESS_NETWORK_STATE",
-        "android.permission.health.READ_HEART_RATE",
-        "android.permission.health.READ_OXYGEN_SATURATION",
-        "android.permission.health.READ_STEPS",
-        "android.permission.health.READ_SLEEP"
+        "ACCESS_NETWORK_STATE"
       ]
     },
     "ios": {

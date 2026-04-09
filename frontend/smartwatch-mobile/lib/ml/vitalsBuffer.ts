@@ -48,7 +48,7 @@ export function getBufferSize(): number {
   return buffer.length;
 }
 
-/** Check if we have enough data for inference (at least 60 readings = 5 min) */
+/** Check if we have enough data for inference (at least 15 readings = ~75s) */
 export function hasEnoughData(): boolean {
-  return buffer.length >= 60;
+  return buffer.length >= 15;
 }

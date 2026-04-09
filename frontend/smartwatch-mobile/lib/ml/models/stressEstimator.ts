@@ -14,7 +14,7 @@ export interface StressResult {
 
 export async function estimateStress(): Promise<StressResult> {
   const window = getWindow(60);
-  if (window.length < 30) {
+  if (window.length < 15) {
     return { stressLevel: 0, stressLabel: 'low' };
   }
 

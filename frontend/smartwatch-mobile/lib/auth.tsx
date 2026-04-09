@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { setOnAuthExpired } from './api';
 
 const TOKEN_KEY = 'jwt_token';
 const EMAIL_KEY = 'user_email';
@@ -57,6 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(null);
   const [userEmail, setUserEmailState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Clear auth on 401/403 from API (expired or invalid token)
+  const handleAuthExpired = useCallback(() => {
+    console.warn('[Auth] Token expired or invalid — signing out');
+    storage.removeItem(TOKEN_KEY);
+    storage.removeItem(EMAIL_KEY);
+    setTokenState(null);
+    setUserEmailState(null);
+  }, []);
+
+  useEffect(() => {
+    setOnAuthExpired(handleAuthExpired);
+  }, [handleAuthExpired]);
 
   useEffect(() => {
     Promise.all([

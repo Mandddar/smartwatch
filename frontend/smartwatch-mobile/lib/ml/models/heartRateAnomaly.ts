@@ -17,19 +17,22 @@ async function loadModel(): Promise<boolean> {
 
   try {
     const tf = getTF();
-    // Build the autoencoder architecture and load weights
+    // Load from bundled assets
+    const { bundleResourceIO } = require('@tensorflow/tfjs-react-native');
+    const modelJSON = require('../../../assets/models/hr_anomaly_tfjs/model.json');
+    const modelWeights = require('../../../assets/models/hr_anomaly_tfjs/group1-shard1of1.bin');
     model = await tf.loadLayersModel(
-      'https://raw.githubusercontent.com/anthropics/placeholder/main/hr_anomaly/model.json'
+      bundleResourceIO(modelJSON, modelWeights)
     ).catch(() => null);
 
     if (!model) {
-      // Fallback: create a simple threshold-based model
+      // Fallback: use statistical detection (no TF model needed)
       model = 'fallback';
     }
     return true;
   } catch {
-    loadFailed = true;
-    return false;
+    model = 'fallback';
+    return true; // still usable via statistical fallback
   }
 }
 
@@ -41,7 +44,7 @@ export interface AnomalyResult {
 
 export async function detectAnomaly(): Promise<AnomalyResult> {
   const window = getWindow(60);
-  if (window.length < 60) {
+  if (window.length < 15) {
     return { anomalyDetected: false, anomalyScore: 0, message: null };
   }
 

@@ -12,6 +12,8 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
 
     List<Alert> findByUserIdOrderByTimestampDesc(Long userId);
 
+    long countByUserIdAndReadFalse(Long userId);
+
     /** Alert count per day for the given user since a date */
     @Query(value = """
             SELECT CAST(a.timestamp AS DATE) AS alert_date,

@@ -4,6 +4,13 @@
  */
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
 
+let onAuthExpired: (() => void) | null = null;
+
+/** Register a callback that fires when the backend returns 401/403 (expired token) */
+export function setOnAuthExpired(cb: () => void) {
+  onAuthExpired = cb;
+}
+
 export async function apiFetch(
   path: string,
   options: RequestInit & { token?: string | null } = {}
@@ -16,7 +23,14 @@ export async function apiFetch(
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  return fetch(`${API_URL}${path}`, { ...rest, headers });
+  const res = await fetch(`${API_URL}${path}`, { ...rest, headers });
+
+  // Auto-logout on expired/invalid token (skip auth endpoints)
+  if ((res.status === 401 || res.status === 403) && token && !path.startsWith('/api/auth')) {
+    onAuthExpired?.();
+  }
+
+  return res;
 }
 
 export async function register(name: string, email: string, password: string, dateOfBirth: string, gender?: string) {
@@ -179,6 +193,83 @@ export async function getBaselines(token: string | null) {
 export async function getBaselineStatus(token: string | null) {
   const res = await apiFetch('/api/baselines/status', { token });
   if (!res.ok) throw new Error('Failed to get baseline status');
+  return res.json();
+}
+
+// ─── Alert Management ───
+
+export async function getUnreadAlertCount(token: string | null): Promise<number> {
+  const res = await apiFetch('/api/alerts/unread-count', { token });
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.count ?? 0;
+}
+
+export async function markAlertAsRead(token: string | null, alertId: number) {
+  const res = await apiFetch(`/api/alerts/${alertId}/read`, { method: 'PATCH', token });
+  if (!res.ok) throw new Error('Failed to mark alert as read');
+  return res.json();
+}
+
+export async function markAllAlertsRead(token: string | null) {
+  const res = await apiFetch('/api/alerts/mark-all-read', { method: 'POST', token });
+  if (!res.ok) throw new Error('Failed to mark all alerts as read');
+}
+
+export async function deleteAlert(token: string | null, alertId: number) {
+  const res = await apiFetch(`/api/alerts/${alertId}`, { method: 'DELETE', token });
+  if (!res.ok) throw new Error('Failed to delete alert');
+}
+
+// ─── Profile Management ───
+
+export async function getProfile(token: string | null) {
+  const res = await apiFetch('/api/profile', { token });
+  if (!res.ok) throw new Error('Failed to get profile');
+  return res.json();
+}
+
+export async function updateProfile(token: string | null, data: { name?: string; gender?: string; dateOfBirth?: string }) {
+  const res = await apiFetch('/api/profile', { method: 'PUT', token, body: JSON.stringify(data) });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update profile');
+  }
+  return res.json();
+}
+
+export async function changePassword(token: string | null, currentPassword: string, newPassword: string) {
+  const res = await apiFetch('/api/profile/change-password', {
+    method: 'POST', token,
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to change password');
+  }
+  return res.json();
+}
+
+export async function deleteAccount(token: string | null, password: string) {
+  const res = await apiFetch('/api/profile', {
+    method: 'DELETE', token,
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to delete account');
+  }
+}
+
+export async function resetPassword(email: string, dateOfBirth: string, newPassword: string) {
+  const res = await apiFetch('/api/profile/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, dateOfBirth, newPassword }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Password reset failed');
+  }
   return res.json();
 }
 

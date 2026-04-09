@@ -18,12 +18,12 @@ const C = {
   bg: '#0b1120',
   card: '#141f35',
   cardBorder: '#1e3356',
-  primary: '#4d8af0',
-  hr: '#ff5370',
-  spo2: '#00d4ff',
-  steps: '#00e5a0',
-  sleep: '#a67ffa',
-  gold: '#ffd060',
+  primary: '#5a7fbf',
+  hr: '#c75e6b',
+  spo2: '#5a9bb5',
+  steps: '#5ba88a',
+  sleep: '#8b7db8',
+  gold: '#bfa45a',
   text: '#e8f0fe',
   textSub: '#7a97c0',
   textMuted: '#3d5478',
@@ -76,16 +76,20 @@ export default function ReportsScreen() {
   const [daily, setDaily] = useState<DailyReport | null>(null);
   const [summary12h, setSummary12h] = useState<SummaryReport | null>(null);
   const [selectedRange, setSelectedRange] = useState<'12h' | '24h'>('12h');
+  const [error, setError] = useState<string | null>(null);
 
   const fetchReports = useCallback(async () => {
     try {
+      setError(null);
       const [d, s] = await Promise.all([
         getDailyReport(token),
         getSummaryReport(token, selectedRange),
       ]);
       setDaily(d);
       setSummary12h(s);
-    } catch {}
+    } catch (e: any) {
+      setError(e.message || 'Failed to load reports');
+    }
   }, [token, selectedRange]);
 
   useEffect(() => {
@@ -137,7 +141,8 @@ export default function ReportsScreen() {
     );
   }
 
-  const trendIcon = summary12h?.trendDirection === 'increasing' ? 'trending-up' :
+  const trendIcon: React.ComponentProps<typeof Ionicons>['name'] =
+    summary12h?.trendDirection === 'increasing' ? 'trending-up' :
     summary12h?.trendDirection === 'decreasing' ? 'trending-down' : 'remove';
   const trendColor = summary12h?.trendDirection === 'increasing' ? C.hr :
     summary12h?.trendDirection === 'decreasing' ? C.primary : C.steps;
@@ -150,6 +155,16 @@ export default function ReportsScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />
       }
     >
+      {/* Error Banner */}
+      {error && (
+        <View style={[styles.summaryCard, { borderColor: C.hr + '40' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="warning-outline" size={18} color={C.hr} />
+            <Text style={[styles.summaryTitle, { color: C.hr }]}>{error}</Text>
+          </View>
+        </View>
+      )}
+
       {/* Range Selector */}
       <View style={styles.rangeRow}>
         {(['12h', '24h'] as const).map((r) => (
@@ -172,7 +187,7 @@ export default function ReportsScreen() {
             <Ionicons name="analytics" size={18} color={C.gold} />
             <Text style={styles.summaryTitle}>Quick Summary</Text>
             <View style={styles.trendBadge}>
-              <Ionicons name={trendIcon as any} size={14} color={trendColor} />
+              <Ionicons name={trendIcon} size={14} color={trendColor} />
               <Text style={[styles.trendText, { color: trendColor }]}>
                 {summary12h.trendDirection}
               </Text>
@@ -244,11 +259,58 @@ export default function ReportsScreen() {
               subtitle="Readings >100 bpm"
             />
             <MetricCard
-              icon="notifications" iconColor="#ffb020" iconBg="rgba(255,176,32,0.12)"
+              icon="notifications" iconColor="#c99a4a" iconBg="rgba(255,176,32,0.12)"
               title="Alerts" value={String(daily.alertCount)}
               subtitle="Triggered today"
             />
           </View>
+
+          {/* Weekly Digest */}
+          {daily && (
+            <View style={[styles.summaryCard, { borderColor: C.sleep + '30' }]}>
+              <View style={styles.summaryHeader}>
+                <Ionicons name="calendar-outline" size={18} color={C.sleep} />
+                <Text style={styles.summaryTitle}>Weekly Digest</Text>
+                <View style={{ backgroundColor: C.sleep + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: C.sleep }}>AUTO</Text>
+                </View>
+              </View>
+              <View style={{ gap: 8 }}>
+                <View style={styles.digestRow}>
+                  <Ionicons name="heart" size={14} color={C.hr} />
+                  <Text style={styles.digestLabel}>Avg Heart Rate</Text>
+                  <Text style={styles.digestValue}>{daily.heartRate.avg.toFixed(0)} bpm</Text>
+                </View>
+                <View style={styles.digestRow}>
+                  <Ionicons name="water" size={14} color={C.spo2} />
+                  <Text style={styles.digestLabel}>Avg SpO2</Text>
+                  <Text style={styles.digestValue}>{daily.spo2.avg.toFixed(0)}%</Text>
+                </View>
+                <View style={styles.digestRow}>
+                  <Ionicons name="footsteps" size={14} color={C.steps} />
+                  <Text style={styles.digestLabel}>Steps Today</Text>
+                  <Text style={styles.digestValue}>{daily.steps.total.toLocaleString()}</Text>
+                </View>
+                <View style={styles.digestRow}>
+                  <Ionicons name="moon" size={14} color={C.sleep} />
+                  <Text style={styles.digestLabel}>Sleep</Text>
+                  <Text style={styles.digestValue}>
+                    {daily.sleep.totalMinutes > 0
+                      ? `${Math.floor(daily.sleep.totalMinutes / 60)}h ${daily.sleep.totalMinutes % 60}m`
+                      : 'No data'}
+                  </Text>
+                </View>
+                <View style={styles.digestRow}>
+                  <Ionicons name="notifications" size={14} color={C.gold} />
+                  <Text style={styles.digestLabel}>Alerts</Text>
+                  <Text style={[styles.digestValue, daily.alertCount > 0 && { color: C.hr }]}>{daily.alertCount}</Text>
+                </View>
+              </View>
+              <Text style={{ fontSize: 10, color: C.textMuted, marginTop: 10, fontStyle: 'italic' }}>
+                Generated {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </Text>
+            </View>
+          )}
 
           {/* Share with Doctor */}
           <TouchableOpacity style={styles.shareBtn} onPress={handleShareWithDoctor} activeOpacity={0.8}>
@@ -351,4 +413,9 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: C.textSub },
   emptyHint: { fontSize: 13, color: C.textMuted, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
+
+  // Digest
+  digestRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  digestLabel: { fontSize: 12, color: C.textSub, flex: 1 },
+  digestValue: { fontSize: 13, fontWeight: '700', color: C.text },
 });

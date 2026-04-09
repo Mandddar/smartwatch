@@ -13,19 +13,19 @@ import {
 import { Link, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/lib/auth';
-import { login } from '@/lib/api';
+import { login, resetPassword } from '@/lib/api';
 
 const C = {
   bg: '#0b1120',
   card: '#141f35',
   cardBorder: '#1e3356',
-  primary: '#4d8af0',
+  primary: '#5a7fbf',
   text: '#e8f0fe',
   textSub: '#7a97c0',
   textMuted: '#3d5478',
   inputBg: '#0d1829',
   inputBorder: '#1e3356',
-  inputFocus: '#4d8af0',
+  inputFocus: '#5a7fbf',
 };
 
 export default function LoginScreen() {
@@ -34,7 +34,31 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetDob, setResetDob] = useState('');
+  const [resetNewPw, setResetNewPw] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   const { setAuth } = useAuth();
+
+  async function handleReset() {
+    if (!resetEmail.trim() || !resetDob || !resetNewPw) {
+      setResetMsg('All fields are required');
+      return;
+    }
+    setResetLoading(true);
+    setResetMsg('');
+    try {
+      await resetPassword(resetEmail.trim(), resetDob, resetNewPw);
+      setResetMsg('Password reset! You can now login.');
+      setTimeout(() => { setShowReset(false); setResetMsg(''); }, 2000);
+    } catch (e) {
+      setResetMsg((e as Error).message);
+    } finally {
+      setResetLoading(false);
+    }
+  }
 
   async function handleLogin() {
     if (!email.trim() || !password) {
@@ -133,6 +157,30 @@ export default function LoginScreen() {
               </>
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => setShowReset(!showReset)} style={styles.forgotBtn}>
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
+
+          {showReset && (
+            <View style={styles.resetSection}>
+              <Text style={styles.resetTitle}>Reset Password</Text>
+              <Text style={styles.resetHint}>Verify your identity with your email and date of birth.</Text>
+              <TextInput style={styles.resetInput} placeholder="Email" placeholderTextColor={C.textMuted}
+                value={resetEmail} onChangeText={setResetEmail} autoCapitalize="none" keyboardType="email-address" />
+              <TextInput style={styles.resetInput} placeholder="Date of birth (YYYY-MM-DD)" placeholderTextColor={C.textMuted}
+                value={resetDob} onChangeText={setResetDob} />
+              <TextInput style={styles.resetInput} placeholder="New password (min 6 chars)" placeholderTextColor={C.textMuted}
+                value={resetNewPw} onChangeText={setResetNewPw} secureTextEntry />
+              {resetMsg ? <Text style={[styles.resetMsg, resetMsg.includes('reset!') && { color: '#5ba88a' }]}>{resetMsg}</Text> : null}
+              <TouchableOpacity
+                style={[styles.resetBtn, resetLoading && { opacity: 0.5 }]}
+                onPress={handleReset} disabled={resetLoading} activeOpacity={0.85}
+              >
+                <Text style={styles.resetBtnText}>{resetLoading ? 'Resetting...' : 'Reset Password'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         <Link href="/(auth)/register" asChild>
@@ -157,12 +205,12 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 24,
-    backgroundColor: 'rgba(77,138,240,0.15)',
+    backgroundColor: 'rgba(90,127,191,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1.5,
-    borderColor: 'rgba(77,138,240,0.35)',
+    borderColor: 'rgba(90,127,191,0.35)',
   },
   brandName: { fontSize: 32, fontWeight: '800', color: C.text, letterSpacing: 0.5 },
   brandTagline: { fontSize: 14, color: C.textSub, marginTop: 5 },
@@ -195,7 +243,7 @@ const styles = StyleSheet.create({
   },
   inputWrapperFocused: {
     borderColor: C.primary,
-    backgroundColor: 'rgba(77,138,240,0.06)',
+    backgroundColor: 'rgba(90,127,191,0.06)',
   },
   inputIcon: { paddingHorizontal: 13 },
   input: {
@@ -228,4 +276,23 @@ const styles = StyleSheet.create({
   footer: { alignItems: 'center', padding: 12 },
   footerText: { color: C.textSub, fontSize: 14 },
   footerLink: { color: C.primary, fontWeight: '700' },
+
+  forgotBtn: { alignItems: 'center', marginTop: 12 },
+  forgotText: { color: C.textSub, fontSize: 13 },
+  resetSection: {
+    marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: C.cardBorder,
+  },
+  resetTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 4 },
+  resetHint: { fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 18 },
+  resetInput: {
+    backgroundColor: C.inputBg, color: C.text, fontSize: 14,
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: C.inputBorder, marginBottom: 10,
+  },
+  resetMsg: { fontSize: 12, color: '#c75e6b', marginBottom: 8 },
+  resetBtn: {
+    backgroundColor: 'rgba(90,127,191,0.15)', borderRadius: 10,
+    padding: 14, alignItems: 'center',
+  },
+  resetBtnText: { color: C.primary, fontWeight: '700', fontSize: 14 },
 });

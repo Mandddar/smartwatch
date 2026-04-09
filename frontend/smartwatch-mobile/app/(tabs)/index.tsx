@@ -21,7 +21,7 @@ import {
 } from '@/lib/api';
 import { insertVital, getUnsyncedCount } from '@/lib/sync/localDb';
 import { syncNow } from '@/lib/sync/syncService';
-import { addReading, runInference, getModelStatus, type MLInsights } from '@/lib/ml';
+import { addReading, runInference, getModelStatus, type MLInsights, type InsightDetail } from '@/lib/ml';
 import { computeLocalBaselines, describeDeviation, type AllBaselines } from '@/lib/ml/baselines';
 import {
   initHealthConnect,
@@ -38,20 +38,20 @@ const C = {
   bg: '#0b1120',
   card: '#141f35',
   cardBorder: '#1e3356',
-  primary: '#4d8af0',
-  hr: '#ff5370',
+  primary: '#5a7fbf',
+  hr: '#c75e6b',
   hrBg: 'rgba(255,83,112,0.13)',
-  spo2: '#00d4ff',
+  spo2: '#5a9bb5',
   spo2Bg: 'rgba(0,212,255,0.10)',
-  steps: '#00e5a0',
+  steps: '#5ba88a',
   stepsBg: 'rgba(0,229,160,0.10)',
-  sleep: '#a67ffa',
-  connected: '#00e5a0',
-  disconnected: '#ff5370',
+  sleep: '#8b7db8',
+  connected: '#5ba88a',
+  disconnected: '#c75e6b',
   text: '#e8f0fe',
   textSub: '#7a97c0',
   textMuted: '#3d5478',
-  gold: '#ffd060',
+  gold: '#bfa45a',
 };
 
 const POLL_INTERVAL_MS = 5000;
@@ -74,65 +74,94 @@ function getGreeting(): string {
 function getHRZone(hr: number): { zone: string; color: string; pct: number } {
   if (hr < 60) return { zone: 'Resting', color: C.primary, pct: 20 };
   if (hr < 90) return { zone: 'Light', color: C.steps, pct: 40 };
-  if (hr < 110) return { zone: 'Fat Burn', color: '#ffb020', pct: 60 };
+  if (hr < 110) return { zone: 'Fat Burn', color: '#c99a4a', pct: 60 };
   if (hr < 130) return { zone: 'Cardio', color: '#ff8040', pct: 80 };
   return { zone: 'Peak', color: C.hr, pct: 95 };
+}
+
+interface ScoreBreakdown {
+  total: number;
+  factors: { label: string; points: number; icon: string; color: string; detail: string }[];
+}
+
+function calcHealthScoreDetailed(
+  hr: number | null, spo2: number | null, steps: number | null,
+  ml: MLInsights | null, bl: AllBaselines | null,
+): ScoreBreakdown {
+  const factors: ScoreBreakdown['factors'] = [];
+  let score = 70;
+  factors.push({ label: 'Base', points: 70, icon: 'heart-circle', color: '#5a7fbf', detail: 'Starting score' });
+
+  if (hr !== null) {
+    let pts = 0;
+    let detail = '';
+    if (bl?.hrResting?.personalized) {
+      const dev = Math.abs(hr - bl.hrResting.mean);
+      if (dev < bl.hrResting.std) { pts = 12; detail = `${hr} bpm within your normal range`; }
+      else if (dev < 2 * bl.hrResting.std) { pts = 6; detail = `${hr} bpm slightly outside normal`; }
+      else { pts = -5; detail = `${hr} bpm far from your baseline`; }
+    } else {
+      if (hr >= 60 && hr <= 85) { pts = 12; detail = `${hr} bpm is in the ideal range`; }
+      else if (hr >= 50 && hr <= 100) { pts = 6; detail = `${hr} bpm is acceptable`; }
+      else { pts = -5; detail = `${hr} bpm is outside normal range`; }
+    }
+    score += pts;
+    factors.push({ label: 'Heart Rate', points: pts, icon: 'heart', color: '#c75e6b', detail });
+  }
+
+  if (spo2 !== null) {
+    let pts = 0;
+    let detail = '';
+    if (bl?.spo2?.personalized) {
+      const dev = bl.spo2.mean - spo2;
+      if (dev < bl.spo2.std) { pts = 8; detail = `${spo2}% is within your norm`; }
+      else if (dev < 2 * bl.spo2.std) { pts = 4; detail = `${spo2}% slightly below your average`; }
+      else { pts = -8; detail = `${spo2}% is low for you`; }
+    } else {
+      if (spo2 >= 98) { pts = 8; detail = `${spo2}% is excellent`; }
+      else if (spo2 >= 95) { pts = 4; detail = `${spo2}% is normal`; }
+      else { pts = -8; detail = `${spo2}% is below normal`; }
+    }
+    score += pts;
+    factors.push({ label: 'SpO2', points: pts, icon: 'water', color: '#5a9bb5', detail });
+  }
+
+  if (steps !== null) {
+    let pts = 0;
+    let detail = '';
+    if (steps >= 10000) { pts = 8; detail = `${steps.toLocaleString()} steps — goal reached!`; }
+    else if (steps >= 5000) { pts = 4; detail = `${steps.toLocaleString()} steps — on track`; }
+    else { pts = 0; detail = `${steps.toLocaleString()} steps — keep moving!`; }
+    score += pts;
+    factors.push({ label: 'Activity', points: pts, icon: 'footsteps', color: '#5ba88a', detail });
+  }
+
+  if (ml && ml.activityConfidence > 0) {
+    let pts = 0;
+    let detail = '';
+    if (ml.stressLevel < 30) { pts += 5; detail = 'Low stress'; }
+    else if (ml.stressLevel > 65) { pts -= 5; detail = 'High stress detected'; }
+    else { detail = 'Moderate stress'; }
+    if (ml.anomalyDetected) { pts -= 10; detail += (detail ? ', ' : '') + 'Anomaly detected'; }
+    if (ml.activity === 'walking' || ml.activity === 'running') { pts += 3; detail += (detail ? ', ' : '') + 'Active'; }
+    score += pts;
+    if (pts !== 0) factors.push({ label: 'AI Analysis', points: pts, icon: 'hardware-chip-outline', color: '#8b7db8', detail });
+  }
+
+  return { total: Math.min(100, Math.max(0, score)), factors };
 }
 
 function calcHealthScore(
   hr: number | null, spo2: number | null, steps: number | null,
   ml: MLInsights | null, bl: AllBaselines | null,
 ): number {
-  let score = 70;
-
-  if (hr !== null) {
-    if (bl?.hrResting?.personalized) {
-      // Personalized: how close to YOUR baseline mean?
-      const dev = Math.abs(hr - bl.hrResting.mean);
-      if (dev < bl.hrResting.std) score += 12;       // within 1 std — great
-      else if (dev < 2 * bl.hrResting.std) score += 6; // within 2 std — ok
-      else score -= 5;                                  // outside — concern
-    } else {
-      // Fallback: population thresholds
-      if (hr >= 60 && hr <= 85) score += 12;
-      else if (hr >= 50 && hr <= 100) score += 6;
-      else score -= 5;
-    }
-  }
-
-  if (spo2 !== null) {
-    if (bl?.spo2?.personalized) {
-      const dev = bl.spo2.mean - spo2; // lower is worse for SpO2
-      if (dev < bl.spo2.std) score += 8;
-      else if (dev < 2 * bl.spo2.std) score += 4;
-      else score -= 8;
-    } else {
-      if (spo2 >= 98) score += 8;
-      else if (spo2 >= 95) score += 4;
-      else score -= 8;
-    }
-  }
-
-  if (steps !== null) {
-    if (steps >= 10000) score += 8;
-    else if (steps >= 5000) score += 4;
-  }
-
-  // ML-enhanced scoring
-  if (ml && ml.activityConfidence > 0) {
-    if (ml.stressLevel < 30) score += 5;
-    else if (ml.stressLevel > 65) score -= 5;
-    if (ml.anomalyDetected) score -= 10;
-    if (ml.activity === 'walking' || ml.activity === 'running') score += 3;
-  }
-
-  return Math.min(100, Math.max(0, score));
+  return calcHealthScoreDetailed(hr, spo2, steps, ml, bl).total;
 }
 
 function getScoreLabel(score: number): { label: string; color: string } {
   if (score >= 90) return { label: 'Excellent', color: C.steps };
   if (score >= 75) return { label: 'Good', color: C.primary };
-  if (score >= 55) return { label: 'Fair', color: '#ffb020' };
+  if (score >= 55) return { label: 'Fair', color: '#c99a4a' };
   return { label: 'Needs Attention', color: C.hr };
 }
 
@@ -195,12 +224,69 @@ export default function HomeScreen() {
   const [sleep, setSleep] = useState<any>(null);
   const [pendingSync, setPendingSync] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [mlInsights, setMlInsights] = useState<MLInsights | null>(null);
   const [dataSource, setDataSource] = useState<'simulator' | 'health_connect'>('simulator');
   const [hcAvailable, setHcAvailable] = useState(false);
   const [baselines, setBaselines] = useState<AllBaselines | null>(null);
+  const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Hydration tracker
+  const [waterCount, setWaterCount] = useState(0);
+  const [lastWaterTime, setLastWaterTime] = useState<number>(Date.now());
+
+  // HR zone timer (seconds in each zone this session)
+  const [zoneTimes, setZoneTimes] = useState({ resting: 0, light: 0, fatBurn: 0, cardio: 0, peak: 0 });
+
 
   const liveRef = useRef({ hr: 72, spo2: 98, steps: 5200, initialized: false });
+
+  // Network status
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const update = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    update();
+    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
+  }, []);
+
+  // Onboarding: show once for new users
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (!localStorage.getItem('vw_onboarded')) setShowOnboarding(true);
+      // Restore hydration (reset daily)
+      const saved = localStorage.getItem('vw_water');
+      if (saved) {
+        const { count, date } = JSON.parse(saved);
+        if (date === new Date().toDateString()) setWaterCount(count);
+      }
+    }
+  }, []);
+
+  // Derived state (must be before useEffects that reference them)
+  const isConnected = status === 'CONNECTED';
+  const dv = isConnected ? (liveVitals ?? vitals) : vitals;
+
+  // Track HR zone time
+  useEffect(() => {
+    if (!isConnected || !dv?.heartRate) return;
+    const zone = getHRZone(dv.heartRate).zone.toLowerCase().replace(' ', '');
+    const key = zone === 'fatburn' ? 'fatBurn' : zone as keyof typeof zoneTimes;
+    setZoneTimes((prev) => ({ ...prev, [key]: (prev[key] || 0) + 5 }));
+  }, [dv?.heartRate, isConnected]);
+
+  function setWater(count: number) {
+    const clamped = Math.max(0, Math.min(8, count));
+    setWaterCount(clamped);
+    if (clamped > 0) setLastWaterTime(Date.now());
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('vw_water', JSON.stringify({ count: clamped, date: new Date().toDateString() }));
+    }
+  }
+
 
   async function fetchStatus() {
     try { setStatus((await getDeviceStatus(token)).status); }
@@ -227,8 +313,16 @@ export default function HomeScreen() {
 
   async function handleSync() {
     setSyncing(true);
-    try { await syncNow(token); setPendingSync(getUnsyncedCount()); } catch {}
+    setSyncMsg(null);
+    try {
+      await syncNow(token);
+      setPendingSync(getUnsyncedCount());
+      setSyncMsg({ text: 'Synced successfully', ok: true });
+    } catch {
+      setSyncMsg({ text: 'Sync failed — will retry later', ok: false });
+    }
     setSyncing(false);
+    setTimeout(() => setSyncMsg(null), 3000);
   }
 
   async function fetchSleepData() {
@@ -256,21 +350,24 @@ export default function HomeScreen() {
   }, [status, token]);
 
   useEffect(() => {
-    if (status !== 'CONNECTED') { setLiveVitals(null); setHrHistory([]); return; }
+    if (status !== 'CONNECTED' || dataSource === 'health_connect') {
+      setLiveVitals(null); setHrHistory([]); return;
+    }
     if (!liveRef.current.initialized) liveRef.current = { hr: 72, spo2: 98, steps: 5200, initialized: true };
     const id = setInterval(() => {
       const prev = liveRef.current;
       const hr = Math.min(115, Math.max(52, prev.hr + (Math.random() - 0.46) * 3.5));
       const spo2 = Math.min(100, Math.max(94, prev.spo2 + (Math.random() - 0.5) * 0.5));
-      const steps = prev.steps + Math.floor(Math.random() * 6);
+      const steps = prev.steps + 1 + Math.floor(Math.random() * 5); // always +1 to +5
       liveRef.current = { hr: Math.round(hr), spo2: parseFloat(spo2.toFixed(1)), steps, initialized: true };
       setHrHistory((h) => [...h.slice(-11), Math.round(hr)]);
       setLiveVitals({ heartRate: Math.round(hr), spo2: parseFloat(spo2.toFixed(1)), steps, timestamp: new Date().toISOString() });
     }, LIVE_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [status]);
+  }, [status, dataSource]);
 
   async function handleConnect() {
+    if (!token) return;
     setLoading(true);
     try {
       // Try Health Connect first (real smartwatch data)
@@ -283,9 +380,10 @@ export default function HomeScreen() {
           try { await connectDevice(token); } catch {}
           setStatus('CONNECTED');
           // Do initial poll
-          await pollLatestData();
-          const insights = await runInference();
-          setMlInsights(insights);
+          try {
+            await pollLatestData();
+            setMlInsights(await runInference());
+          } catch {}
           setLoading(false);
           return;
         }
@@ -304,6 +402,7 @@ export default function HomeScreen() {
   }
 
   async function handleDisconnect() {
+    if (!token) return;
     setLoading(true);
     stopHCPolling();
     try { await disconnectDevice(token); } catch {}
@@ -313,8 +412,6 @@ export default function HomeScreen() {
   }
 
   const displayName = userEmail ? userEmail.split('@')[0] : 'there';
-  const isConnected = status === 'CONNECTED';
-  const dv = isConnected ? (liveVitals ?? vitals) : vitals;
   const score = calcHealthScore(dv?.heartRate ?? null, dv?.spo2 ?? null, dv?.steps ?? null, mlInsights, baselines);
   const scoreInfo = getScoreLabel(score);
   const hrZone = dv?.heartRate ? getHRZone(dv.heartRate) : null;
@@ -323,7 +420,30 @@ export default function HomeScreen() {
   if (initialLoading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={C.primary} />
+        <View style={{ width: '100%', paddingHorizontal: 18, gap: 14 }}>
+          {/* Skeleton header */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <View style={{ gap: 6 }}>
+              <View style={{ height: 20, width: 180, backgroundColor: C.card, borderRadius: 6 }} />
+              <View style={{ height: 14, width: 120, backgroundColor: C.card, borderRadius: 4 }} />
+            </View>
+            <View style={{ height: 34, width: 90, backgroundColor: C.card, borderRadius: 17 }} />
+          </View>
+          {/* Skeleton score card */}
+          <View style={{ backgroundColor: C.card, borderRadius: 18, padding: 18, height: 100, borderWidth: 1, borderColor: C.cardBorder }} />
+          {/* Skeleton vitals card */}
+          <View style={{ backgroundColor: C.card, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: C.cardBorder }}>
+            <View style={{ height: 16, width: 100, backgroundColor: C.cardBorder, borderRadius: 4, marginBottom: 14 }} />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1, height: 80, backgroundColor: 'rgba(255,83,112,0.08)', borderRadius: 14 }} />
+              <View style={{ flex: 1, height: 80, backgroundColor: 'rgba(0,212,255,0.06)', borderRadius: 14 }} />
+              <View style={{ flex: 1, height: 80, backgroundColor: 'rgba(0,229,160,0.06)', borderRadius: 14 }} />
+            </View>
+          </View>
+          {/* Skeleton AI card */}
+          <View style={{ backgroundColor: C.card, borderRadius: 18, padding: 18, height: 80, borderWidth: 1, borderColor: C.cardBorder }} />
+        </View>
+        <ActivityIndicator size="small" color={C.primary} style={{ marginTop: 16 }} />
         <Text style={styles.loadingText}>Loading your health data...</Text>
       </View>
     );
@@ -358,6 +478,55 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
+      {/* Onboarding Tutorial */}
+      {showOnboarding && (
+        <View style={styles.onboardCard}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>Welcome to VitalWatch!</Text>
+            <Pressable onPress={() => {
+              setShowOnboarding(false);
+              if (typeof window !== 'undefined' && window.localStorage) localStorage.setItem('vw_onboarded', '1');
+            }}>
+              <Ionicons name="close-circle" size={22} color={C.textMuted} />
+            </Pressable>
+          </View>
+          <View style={styles.onboardStep}>
+            <View style={[styles.onboardNum, { backgroundColor: 'rgba(77,138,240,0.2)' }]}>
+              <Text style={{ color: C.primary, fontWeight: '800', fontSize: 12 }}>1</Text>
+            </View>
+            <Text style={styles.onboardText}>Tap <Text style={{ color: C.steps, fontWeight: '700' }}>Connect</Text> above to start your virtual smartwatch</Text>
+          </View>
+          <View style={styles.onboardStep}>
+            <View style={[styles.onboardNum, { backgroundColor: 'rgba(0,229,160,0.2)' }]}>
+              <Text style={{ color: C.steps, fontWeight: '800', fontSize: 12 }}>2</Text>
+            </View>
+            <Text style={styles.onboardText}>Wait ~75 seconds for AI insights to activate (needs 15+ readings)</Text>
+          </View>
+          <View style={styles.onboardStep}>
+            <View style={[styles.onboardNum, { backgroundColor: 'rgba(166,127,250,0.2)' }]}>
+              <Text style={{ color: '#8b7db8', fontWeight: '800', fontSize: 12 }}>3</Text>
+            </View>
+            <Text style={styles.onboardText}>Explore Analytics, Reports, and Alerts tabs for deeper insights</Text>
+          </View>
+          <View style={styles.onboardStep}>
+            <View style={[styles.onboardNum, { backgroundColor: 'rgba(255,208,96,0.2)' }]}>
+              <Text style={{ color: C.gold, fontWeight: '800', fontSize: 12 }}>4</Text>
+            </View>
+            <Text style={styles.onboardText}>Your baselines personalize after ~7 days of data collection</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Offline Banner */}
+      {!isOnline && (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline" size={16} color="#c99a4a" />
+          <Text style={{ fontSize: 12, color: '#c99a4a', fontWeight: '600', flex: 1 }}>
+            You're offline. Data is being saved locally and will sync when reconnected.
+          </Text>
+        </View>
+      )}
+
       {/* Data Source Banner — shows when connected via Health Connect */}
       {isConnected && dataSource === 'health_connect' && (
         <View style={styles.sourceBanner}>
@@ -372,33 +541,61 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* AI Health Score — ML-enhanced */}
-      {isConnected && dv?.heartRate != null && (
-        <View style={[styles.card, { borderColor: scoreInfo.color + '40' }]}>
-          <View style={styles.scoreHeader}>
-            <View style={[styles.scoreBadge, { backgroundColor: scoreInfo.color + '20', borderColor: scoreInfo.color + '40' }]}>
-              <Text style={[styles.scoreBadgeText, { color: scoreInfo.color }]}>{scoreInfo.label}</Text>
-            </View>
-            {mlInsights?.activityConfidence ? (
-              <View style={styles.aiBadge}><Text style={styles.aiBadgeText}>AI-Enhanced</Text></View>
-            ) : null}
-          </View>
-          <View style={styles.scoreRow}>
-            <Text style={[styles.scoreValue, { color: scoreInfo.color }]}>{score}</Text>
-            <View style={styles.scoreDetail}>
-              <Text style={styles.scoreLabel}>Health Score</Text>
-              <View style={styles.scoreBarBg}>
-                <View style={[styles.scoreBarFill, { width: `${score}%` as any, backgroundColor: scoreInfo.color }]} />
+      {/* AI Health Score — ML-enhanced, tappable for breakdown */}
+      {isConnected && dv?.heartRate != null && (() => {
+        const bd = calcHealthScoreDetailed(dv?.heartRate ?? null, dv?.spo2 ?? null, dv?.steps ?? null, mlInsights, baselines);
+        return (
+          <Pressable
+            onPress={() => setShowScoreBreakdown(!showScoreBreakdown)}
+            style={[styles.card, { borderColor: scoreInfo.color + '40' }]}
+          >
+            <View style={styles.scoreHeader}>
+              <View style={[styles.scoreBadge, { backgroundColor: scoreInfo.color + '20', borderColor: scoreInfo.color + '40' }]}>
+                <Text style={[styles.scoreBadgeText, { color: scoreInfo.color }]}>{scoreInfo.label}</Text>
               </View>
-              <Text style={styles.scoreHint}>
-                {score >= 85 ? 'Your vitals look great right now' :
-                 score >= 65 ? 'Looking good, keep it up' :
-                 'Some metrics need attention'}
-              </Text>
+              {mlInsights?.activityConfidence ? (
+                <View style={styles.aiBadge}><Text style={styles.aiBadgeText}>AI-Enhanced</Text></View>
+              ) : null}
+              <Ionicons name={showScoreBreakdown ? 'chevron-up' : 'chevron-down'} size={16} color={C.textMuted} style={{ marginLeft: 'auto' }} />
             </View>
-          </View>
-        </View>
-      )}
+            <View style={styles.scoreRow}>
+              <Text style={[styles.scoreValue, { color: scoreInfo.color }]}>{score}</Text>
+              <View style={styles.scoreDetail}>
+                <Text style={styles.scoreLabel}>Health Score</Text>
+                <View style={styles.scoreBarBg}>
+                  <View style={[styles.scoreBarFill, { width: `${score}%` as any, backgroundColor: scoreInfo.color }]} />
+                </View>
+                <Text style={styles.scoreHint}>
+                  {showScoreBreakdown ? 'Tap to collapse' :
+                   score >= 85 ? 'Your vitals look great — tap for details' :
+                   score >= 65 ? 'Looking good — tap to see breakdown' :
+                   'Some metrics need attention — tap for details'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Score Breakdown */}
+            {showScoreBreakdown && (
+              <View style={styles.breakdownSection}>
+                {bd.factors.filter(f => f.label !== 'Base').map((f, i) => (
+                  <View key={i} style={styles.breakdownRow}>
+                    <View style={[styles.breakdownIcon, { backgroundColor: f.color + '18' }]}>
+                      <Ionicons name={f.icon as any} size={14} color={f.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.breakdownLabel}>{f.label}</Text>
+                      <Text style={styles.breakdownDetail}>{f.detail}</Text>
+                    </View>
+                    <Text style={[styles.breakdownPts, { color: f.points >= 0 ? C.steps : C.hr }]}>
+                      {f.points >= 0 ? '+' : ''}{f.points}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Pressable>
+        );
+      })()}
 
       {/* Personal Baselines — "Your Normal" */}
       {baselines && baselines.learningProgress > 0 && (
@@ -539,14 +736,13 @@ export default function HomeScreen() {
       {mlInsights && mlInsights.activityConfidence > 0 && (
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="hardware-chip-outline" size={18} color="#a67ffa" />
+            <Ionicons name="hardware-chip-outline" size={18} color="#8b7db8" />
             <Text style={styles.cardTitle}> AI Intelligence</Text>
             <View style={styles.mlBadge}><Text style={styles.mlBadgeText}>LIVE</Text></View>
           </View>
 
           {/* 3-column quick stats */}
           <View style={styles.aiGrid}>
-            {/* Activity */}
             <View style={styles.aiItem}>
               <View style={[styles.aiIconBg, { backgroundColor: 'rgba(0,229,160,0.12)' }]}>
                 <Ionicons
@@ -559,32 +755,27 @@ export default function HomeScreen() {
               </Text>
               <Text style={styles.aiLabel}>Activity</Text>
             </View>
-
-            {/* Stress */}
             <View style={styles.aiItem}>
               <View style={[styles.aiIconBg, {
                 backgroundColor: mlInsights.stressLabel === 'high' ? 'rgba(255,83,112,0.12)' :
                   mlInsights.stressLabel === 'moderate' ? 'rgba(255,176,32,0.12)' : 'rgba(0,229,160,0.12)',
               }]}>
                 <Ionicons name="fitness" size={20} color={
-                  mlInsights.stressLabel === 'high' ? C.hr : mlInsights.stressLabel === 'moderate' ? '#ffb020' : C.steps
+                  mlInsights.stressLabel === 'high' ? C.hr : mlInsights.stressLabel === 'moderate' ? '#c99a4a' : C.steps
                 } />
               </View>
               <Text style={[styles.aiValue, {
-                color: mlInsights.stressLabel === 'high' ? C.hr : mlInsights.stressLabel === 'moderate' ? '#ffb020' : C.steps,
+                color: mlInsights.stressLabel === 'high' ? C.hr : mlInsights.stressLabel === 'moderate' ? '#c99a4a' : C.steps,
               }]}>{mlInsights.stressLevel}</Text>
               <Text style={styles.aiLabel}>Stress</Text>
             </View>
-
-            {/* Shield / Anomaly Status */}
             <View style={styles.aiItem}>
               <View style={[styles.aiIconBg, {
                 backgroundColor: mlInsights.anomalyDetected ? 'rgba(255,83,112,0.12)' : 'rgba(0,229,160,0.12)',
               }]}>
                 <Ionicons
                   name={mlInsights.anomalyDetected ? 'warning' : 'shield-checkmark'}
-                  size={20}
-                  color={mlInsights.anomalyDetected ? C.hr : C.steps}
+                  size={20} color={mlInsights.anomalyDetected ? C.hr : C.steps}
                 />
               </View>
               <Text style={[styles.aiValue, { color: mlInsights.anomalyDetected ? C.hr : C.steps }]}>
@@ -594,11 +785,39 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Anomaly Alert Banner */}
-          {mlInsights.anomalyDetected && mlInsights.anomalyMessage && (
-            <View style={styles.anomalyBanner}>
-              <Ionicons name="warning" size={16} color={C.hr} />
-              <Text style={styles.anomalyText}>{mlInsights.anomalyMessage}</Text>
+          {/* Insights — short and actionable */}
+          {mlInsights.details && mlInsights.details.length > 0 && (
+            <View style={styles.insightsSection}>
+              {mlInsights.details.map((d: InsightDetail, i: number) => {
+                const col = d.severity === 'critical' ? C.hr : d.severity === 'warning' ? '#c99a4a' : C.primary;
+                return (
+                  <View key={i} style={[styles.insightRow, { borderLeftColor: col }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.insightTitle, { color: col }]}>{d.title}</Text>
+                      <Text style={styles.insightSub}>{d.reason}</Text>
+                    </View>
+                    <Text style={styles.insightTip}>{d.recommendation}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Predictions */}
+          {mlInsights.predictions && mlInsights.predictions.length > 0 && (
+            <View style={styles.insightsSection}>
+              {mlInsights.predictions.map((p: InsightDetail, i: number) => (
+                <View key={i} style={[styles.insightRow, { borderLeftColor: '#8b7db8' }]}>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="trending-up" size={11} color="#8b7db8" />
+                      <Text style={[styles.insightTitle, { color: '#8b7db8' }]}>{p.title}</Text>
+                    </View>
+                    <Text style={styles.insightSub}>{p.reason}</Text>
+                  </View>
+                  <Text style={styles.insightTip}>{p.recommendation}</Text>
+                </View>
+              ))}
             </View>
           )}
 
@@ -621,7 +840,71 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Quick Actions */}
+      {/* Hydration Tracker */}
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <Ionicons name="water-outline" size={18} color={C.spo2} />
+          <Text style={styles.cardTitle}> Hydration</Text>
+          {(Date.now() - lastWaterTime > 7200000) && waterCount > 0 && (
+            <View style={[styles.mlBadge, { backgroundColor: 'rgba(201,154,74,0.15)', borderColor: 'rgba(201,154,74,0.3)' }]}>
+              <Text style={[styles.mlBadgeText, { color: C.gold }]}>DRINK WATER</Text>
+            </View>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={styles.waterGlasses}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Pressable
+                key={i}
+                onPress={() => setWater(i < waterCount ? i : i + 1)}
+                hitSlop={4}
+              >
+                <Ionicons
+                  name={i < waterCount ? 'water' : 'water-outline'}
+                  size={22}
+                  color={i < waterCount ? C.spo2 : C.textMuted}
+                />
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.waterText}>{waterCount}/8</Text>
+        </View>
+      </View>
+
+      {/* HR Zone Timer */}
+      {isConnected && Object.values(zoneTimes).some(v => v > 0) && (
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="timer-outline" size={18} color={C.primary} />
+            <Text style={styles.cardTitle}> Zone Timer</Text>
+          </View>
+          <View style={styles.zoneTimerGrid}>
+            {([
+              { key: 'resting', label: 'Rest', color: C.primary },
+              { key: 'light', label: 'Light', color: C.steps },
+              { key: 'fatBurn', label: 'Fat Burn', color: C.gold },
+              { key: 'cardio', label: 'Cardio', color: '#d08050' },
+              { key: 'peak', label: 'Peak', color: C.hr },
+            ] as const).map(({ key, label, color }) => {
+              const secs = zoneTimes[key];
+              const mins = Math.floor(secs / 60);
+              const total = Object.values(zoneTimes).reduce((a, b) => a + b, 0);
+              const pct = total > 0 ? Math.round((secs / total) * 100) : 0;
+              return (
+                <View key={key} style={styles.zoneTimerItem}>
+                  <View style={[styles.zoneTimerBar, { backgroundColor: color + '20' }]}>
+                    <View style={[styles.zoneTimerFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+                  </View>
+                  <Text style={[styles.zoneTimerLabel, { color }]}>{label}</Text>
+                  <Text style={styles.zoneTimerValue}>{mins}m</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* Quick Actions + Event Logger */}
       <View style={styles.actionsRow}>
         {pendingSync > 0 && (
           <Pressable
@@ -633,19 +916,21 @@ export default function HomeScreen() {
             <Text style={styles.actionLabel}>{syncing ? 'Syncing...' : `Sync (${pendingSync})`}</Text>
           </Pressable>
         )}
+        {syncMsg && (
+          <View style={[styles.actionBtn, { backgroundColor: syncMsg.ok ? 'rgba(91,168,138,0.15)' : 'rgba(199,94,107,0.15)' }]}>
+            <Ionicons name={syncMsg.ok ? 'checkmark-circle' : 'alert-circle'} size={16} color={syncMsg.ok ? C.steps : C.hr} />
+            <Text style={[styles.actionLabel, { color: syncMsg.ok ? C.steps : C.hr }]}>{syncMsg.text}</Text>
+          </View>
+        )}
         {sleep && (
           <View style={styles.actionBtn}>
             <Ionicons name="moon" size={18} color={C.sleep} />
-            <Text style={styles.actionLabel}>
-              Sleep {sleep.qualityScore?.toFixed(0)}/100
-            </Text>
+            <Text style={styles.actionLabel}>Sleep {sleep.qualityScore?.toFixed(0)}/100</Text>
           </View>
         )}
         <View style={styles.actionBtn}>
-          <Ionicons name="time-outline" size={18} color={C.gold} />
-          <Text style={styles.actionLabel}>
-            {Math.round((dv?.steps ?? 0) * 0.04)} kcal
-          </Text>
+          <Ionicons name="flame-outline" size={18} color={C.gold} />
+          <Text style={styles.actionLabel}>{Math.round((dv?.steps ?? 0) * 0.04)} kcal</Text>
         </View>
       </View>
     </ScrollView>
@@ -675,7 +960,7 @@ const styles = StyleSheet.create({
   scoreBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
   scoreBadgeText: { fontSize: 11, fontWeight: '800' },
   aiBadge: { backgroundColor: 'rgba(166,127,250,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(166,127,250,0.3)' },
-  aiBadgeText: { fontSize: 9, fontWeight: '700', color: '#a67ffa', letterSpacing: 0.5 },
+  aiBadgeText: { fontSize: 9, fontWeight: '700', color: '#8b7db8', letterSpacing: 0.5 },
   scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   scoreValue: { fontSize: 56, fontWeight: '900', lineHeight: 60 },
   scoreDetail: { flex: 1 },
@@ -818,4 +1103,51 @@ const styles = StyleSheet.create({
   },
   sourceDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.steps },
   sourceChipText: { fontSize: 10, fontWeight: '700', color: C.steps },
+
+  // Score Breakdown
+  breakdownSection: { marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', paddingTop: 12, gap: 8 },
+  breakdownRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  breakdownIcon: { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  breakdownLabel: { fontSize: 12, fontWeight: '700', color: C.text },
+  breakdownDetail: { fontSize: 11, color: C.textMuted },
+  breakdownPts: { fontSize: 14, fontWeight: '800', minWidth: 30, textAlign: 'right' },
+
+  // Onboarding
+  onboardCard: {
+    backgroundColor: C.card, borderRadius: 18, padding: 18,
+    borderWidth: 1, borderColor: 'rgba(77,138,240,0.3)',
+  },
+  onboardStep: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  onboardNum: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  onboardText: { fontSize: 13, color: C.textSub, flex: 1, lineHeight: 18 },
+
+  // Insights & Predictions
+  insightsSection: { gap: 6, marginBottom: 6 },
+  insightRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: 10,
+    borderLeftWidth: 3,
+  },
+  insightTitle: { fontSize: 12, fontWeight: '700' },
+  insightSub: { fontSize: 10, color: C.textMuted, marginTop: 1 },
+  insightTip: { fontSize: 10, color: C.gold, maxWidth: 120, textAlign: 'right' },
+
+  // Offline Banner
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(201,154,74,0.10)', borderRadius: 10,
+    padding: 10, borderWidth: 1, borderColor: 'rgba(201,154,74,0.30)',
+  },
+
+  // Hydration
+  waterGlasses: { flexDirection: 'row', gap: 8, flex: 1 },
+  waterText: { fontSize: 14, fontWeight: '700', color: C.textSub },
+
+  // Zone Timer
+  zoneTimerGrid: { gap: 6 },
+  zoneTimerItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  zoneTimerBar: { flex: 1, height: 8, borderRadius: 4, overflow: 'hidden' },
+  zoneTimerFill: { height: 8, borderRadius: 4 },
+  zoneTimerLabel: { fontSize: 10, fontWeight: '700', width: 52 },
+  zoneTimerValue: { fontSize: 11, color: C.textMuted, width: 28, textAlign: 'right' },
 });

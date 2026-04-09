@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/alerts")
@@ -26,7 +27,32 @@ public class AlertController {
         return ResponseEntity.ok(alertService.getAlerts(userId));
     }
 
-    /** GET /api/alerts/stats?range=7d — alert count per day for the last N days */
+    @GetMapping("/unread-count")
+    public ResponseEntity<Map<String, Long>> getUnreadCount(Authentication auth) {
+        Long userId = (Long) auth.getPrincipal();
+        return ResponseEntity.ok(Map.of("count", alertService.getUnreadCount(userId)));
+    }
+
+    @PatchMapping("/{id}/read")
+    public ResponseEntity<AlertResponse> markAsRead(Authentication auth, @PathVariable Long id) {
+        Long userId = (Long) auth.getPrincipal();
+        return ResponseEntity.ok(alertService.markAsRead(userId, id));
+    }
+
+    @PostMapping("/mark-all-read")
+    public ResponseEntity<Void> markAllAsRead(Authentication auth) {
+        Long userId = (Long) auth.getPrincipal();
+        alertService.markAllAsRead(userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteAlert(Authentication auth, @PathVariable Long id) {
+        Long userId = (Long) auth.getPrincipal();
+        alertService.deleteAlert(userId, id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<List<AlertStatsResponse>> getAlertStats(
             Authentication auth,

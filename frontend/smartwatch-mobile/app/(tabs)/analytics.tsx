@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { getVitalsAggregate, getAlertStats, getVitalsTrends } from '@/lib/api';
-import { getWindow, getBufferSize } from '@/lib/ml/vitalsBuffer';
+import { getWindow, getBufferSize, getFullBuffer } from '@/lib/ml/vitalsBuffer';
 import { estimateStress } from '@/lib/ml/models/stressEstimator';
 import { classifyActivity } from '@/lib/ml/models/activityClassifier';
 import type { VitalReading } from '@/lib/ml/types';
@@ -23,14 +23,14 @@ const C = {
   bg: '#0b1120',
   card: '#141f35',
   cardBorder: '#1e3356',
-  primary: '#4d8af0',
-  hr: '#ff5370',
+  primary: '#5a7fbf',
+  hr: '#c75e6b',
   hrBg: 'rgba(255,83,112,0.13)',
-  spo2: '#00d4ff',
+  spo2: '#5a9bb5',
   spo2Bg: 'rgba(0,212,255,0.10)',
-  steps: '#00e5a0',
+  steps: '#5ba88a',
   stepsBg: 'rgba(0,229,160,0.10)',
-  alert: '#ffb020',
+  alert: '#c99a4a',
   alertBg: 'rgba(255,176,32,0.12)',
   text: '#e8f0fe',
   textSub: '#7a97c0',
@@ -60,27 +60,35 @@ function subsample(labels: string[], values: number[], maxPoints = 12) {
   };
 }
 
+/** Convert hex color (#rrggbb) to rgba string with given opacity */
+function hexToRgba(hex: string, opacity: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
 const mkConfig = (fromColor: string, toColor: string, lineColor: string) => ({
   backgroundColor: 'transparent',
   backgroundGradientFrom: fromColor,
   backgroundGradientTo: toColor,
   decimalPlaces: 0,
-  color: (opacity = 1) => lineColor.replace(')', `, ${opacity})`).replace('rgb', 'rgba'),
-  labelColor: () => C.textSub,
+  color: (opacity = 1) => hexToRgba(lineColor, opacity),
+  labelColor: (opacity = 1) => hexToRgba(C.textSub, opacity),
   propsForDots: { r: '4', strokeWidth: '2', stroke: lineColor, fill: fromColor },
   propsForBackgroundLines: { strokeDasharray: '4', stroke: 'rgba(255,255,255,0.06)', strokeWidth: 1 },
   barPercentage: 0.6,
   fillShadowGradientOpacity: 0.25,
 });
 
-const hrConfig = mkConfig('#1a0a14', '#1a0a14', '#ff5370');
-const spo2Config = mkConfig('#021b22', '#021b22', '#00d4ff');
+const hrConfig = mkConfig('#1a0a14', '#1a0a14', '#c75e6b');
+const spo2Config = mkConfig('#021b22', '#021b22', '#5a9bb5');
 const stepsConfig = {
-  ...mkConfig('#021a10', '#021a10', '#00e5a0'),
+  ...mkConfig('#021a10', '#021a10', '#5ba88a'),
   barPercentage: 0.55,
 };
 const alertConfig = {
-  ...mkConfig('#1a1203', '#1a1203', '#ffb020'),
+  ...mkConfig('#1a1203', '#1a1203', '#c99a4a'),
   barPercentage: 0.55,
 };
 
@@ -90,9 +98,9 @@ const trendDirectionIcon: Record<string, React.ComponentProps<typeof Ionicons>['
   stable: 'remove',
 };
 const trendDirectionColor: Record<string, string> = {
-  increasing: '#ff5370',
-  decreasing: '#4d8af0',
-  stable: '#00e5a0',
+  increasing: '#c75e6b',
+  decreasing: '#5a7fbf',
+  stable: '#5ba88a',
 };
 
 export default function AnalyticsScreen() {
@@ -183,9 +191,9 @@ export default function AnalyticsScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchAnalytics();
+    await Promise.all([fetchAnalytics(), fetchMLData()]);
     setRefreshing(false);
-  }, [fetchAnalytics]);
+  }, [fetchAnalytics, fetchMLData]);
 
   if (loading) {
     return (
@@ -210,35 +218,47 @@ export default function AnalyticsScreen() {
     );
   }
 
-  const rawHrLabels = hourlyData.map((d) => {
+  // Filter out buckets with null data so charts don't show flat zero lines
+  const validHourly = hourlyData.filter((d) => d.avgHeartRate != null && d.avgHeartRate > 0);
+  const rawHrLabels = validHourly.map((d) => {
     const dt = new Date(d.bucket);
     return `${dt.getHours().toString().padStart(2, '0')}h`;
   });
-  const rawHrValues = hourlyData.map((d) => d.avgHeartRate ?? 0);
-  const rawSpo2Values = hourlyData.map((d) => d.avgSpO2 ?? 0);
+  const rawHrValues = validHourly.map((d) => d.avgHeartRate!);
   const { labels: hrLabels, values: hrValues } = subsample(rawHrLabels, rawHrValues);
-  const { values: spo2Values } = subsample(rawHrLabels, rawSpo2Values);
 
-  const stepsLabels = dailyData.map((d) =>
+  // SpO2: filter out null/zero entries while keeping labels in sync
+  const validSpo2 = validHourly
+    .map((d, i) => ({ label: rawHrLabels[i], value: d.avgSpO2 }))
+    .filter((d): d is { label: string; value: number } => d.value != null && d.value > 0);
+  const { labels: spo2Labels, values: spo2Values } = subsample(
+    validSpo2.map((d) => d.label),
+    validSpo2.map((d) => d.value),
+  );
+
+  const validDaily = dailyData.filter((d) => d.totalSteps != null);
+  const stepsLabels = validDaily.map((d) =>
     new Date(d.bucket).toLocaleDateString('en-US', { weekday: 'short' })
   );
-  const stepsValues = dailyData.map((d) => Number(d.totalSteps ?? 0));
+  const stepsValues = validDaily.map((d) => Number(d.totalSteps ?? 0));
 
-  const alertLabels = alertData.map((d) =>
+  const validAlerts = alertData.filter((d) => d.alertCount != null);
+  const alertLabels = validAlerts.map((d) =>
     new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' })
   );
-  const alertValues = alertData.map((d) => d.alertCount);
+  const alertValues = validAlerts.map((d) => d.alertCount);
 
-  const rawTrendLabels = (trends?.dailyData ?? []).map((d: any) =>
+  const rawTrendData = (trends?.dailyData ?? []).filter((d: any) => d.avgHeartRate != null && d.avgHeartRate > 0);
+  const rawTrendLabels = rawTrendData.map((d: any) =>
     new Date(d.bucket).toLocaleDateString('en-US', { weekday: 'short' })
   );
-  const rawTrendValues = (trends?.dailyData ?? []).map((d: any) => d.avgHeartRate ?? 0);
+  const rawTrendValues = rawTrendData.map((d: any) => d.avgHeartRate!);
   const { labels: trendLabels, values: trendValues } = subsample(rawTrendLabels, rawTrendValues);
 
   const hasHourlyData = hrLabels.length > 1;
-  const hasDailyData = stepsLabels.length > 0;
+  const hasDailyData = stepsLabels.length > 0 && stepsValues.some((v) => v > 0);
   const hasAlertData = alertLabels.length > 0;
-  const hasTrendData = trendLabels.length > 0;
+  const hasTrendData = trendLabels.length > 1;
   const trendDir: string = trends?.trendDirection ?? 'stable';
 
   return (
@@ -249,12 +269,39 @@ export default function AnalyticsScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />
       }
     >
-      {/* View Reports Button */}
-      <TouchableOpacity style={styles.reportsBtn} onPress={() => router.push('/(tabs)/reports')} activeOpacity={0.8}>
-        <Ionicons name="document-text" size={18} color={C.primary} />
-        <Text style={styles.reportsBtnText}>Daily Health Reports</Text>
-        <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
-      </TouchableOpacity>
+      {/* View Reports + Export */}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <TouchableOpacity style={[styles.reportsBtn, { flex: 1 }]} onPress={() => router.push('/(tabs)/reports')} activeOpacity={0.8}>
+          <Ionicons name="document-text" size={18} color={C.primary} />
+          <Text style={styles.reportsBtnText}>Reports</Text>
+          <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.reportsBtn, { flex: 1 }]}
+          activeOpacity={0.8}
+          onPress={() => {
+            const buf = getFullBuffer();
+            if (buf.length === 0) return;
+            const header = 'timestamp,heartRate,spo2,steps\n';
+            const rows = buf.map(r =>
+              `${new Date(r.timestamp).toISOString()},${r.heartRate},${r.spo2},${r.steps}`
+            ).join('\n');
+            const csv = header + rows;
+            if (typeof window !== 'undefined') {
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `vitals_${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          }}
+        >
+          <Ionicons name="download-outline" size={18} color={C.steps} />
+          <Text style={[styles.reportsBtnText, { color: C.steps }]}>Export CSV</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Weekly Summary Banner */}
       <View style={styles.summaryBanner}>
@@ -297,7 +344,7 @@ export default function AnalyticsScreen() {
         {hasTrendData ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <LineChart
-              data={{ labels: trendLabels, datasets: [{ data: trendValues.length > 0 ? trendValues : [0] }] }}
+              data={{ labels: trendLabels, datasets: [{ data: trendValues }] }}
               width={Math.max(CHART_WIDTH, trendLabels.length * 55)}
               height={200}
               chartConfig={hrConfig}
@@ -326,7 +373,7 @@ export default function AnalyticsScreen() {
         {hasHourlyData ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <LineChart
-              data={{ labels: hrLabels, datasets: [{ data: hrValues.length > 0 ? hrValues : [0] }] }}
+              data={{ labels: hrLabels, datasets: [{ data: hrValues }] }}
               width={Math.max(CHART_WIDTH, hrLabels.length * 44)}
               height={200}
               chartConfig={hrConfig}
@@ -355,8 +402,8 @@ export default function AnalyticsScreen() {
         {hasHourlyData ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <LineChart
-              data={{ labels: hrLabels, datasets: [{ data: spo2Values.length > 0 ? spo2Values : [0] }] }}
-              width={Math.max(CHART_WIDTH, hrLabels.length * 44)}
+              data={{ labels: spo2Labels, datasets: [{ data: spo2Values }] }}
+              width={Math.max(CHART_WIDTH, spo2Labels.length * 44)}
               height={200}
               chartConfig={spo2Config}
               bezier
@@ -383,7 +430,7 @@ export default function AnalyticsScreen() {
         </View>
         {hasDailyData ? (
           <BarChart
-            data={{ labels: stepsLabels, datasets: [{ data: stepsValues.length > 0 ? stepsValues : [0] }] }}
+            data={{ labels: stepsLabels, datasets: [{ data: stepsValues }] }}
             width={CHART_WIDTH}
             height={200}
             chartConfig={stepsConfig}
@@ -402,7 +449,7 @@ export default function AnalyticsScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={[styles.iconDot, { backgroundColor: 'rgba(255,208,96,0.12)' }]}>
-              <Ionicons name="pulse" size={16} color="#ffb020" />
+              <Ionicons name="pulse" size={16} color="#c99a4a" />
             </View>
             <View>
               <Text style={styles.cardTitle}>Stress Level Trend</Text>
@@ -411,22 +458,31 @@ export default function AnalyticsScreen() {
             <View style={styles.mlTag}><Text style={styles.mlTagText}>TinyML</Text></View>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <LineChart
-              data={{
-                labels: stressHistory.map((s) => s.time),
-                datasets: [{ data: stressHistory.map((s) => s.level) }],
-              }}
-              width={Math.max(CHART_WIDTH, stressHistory.length * 55)}
-              height={200}
-              chartConfig={{
-                ...mkConfig('#1a1203', '#1a1203', '#ffb020'),
-                decimalPlaces: 0,
-              }}
-              bezier
-              style={styles.chart}
-              yAxisSuffix=""
-              fromZero
-            />
+            {(() => {
+              const { labels: stressLabels, values: stressValues } = subsample(
+                stressHistory.map((s) => s.time),
+                stressHistory.map((s) => s.level),
+                10,
+              );
+              return (
+                <LineChart
+                  data={{
+                    labels: stressLabels,
+                    datasets: [{ data: stressValues }],
+                  }}
+                  width={Math.max(CHART_WIDTH, stressLabels.length * 55)}
+                  height={200}
+                  chartConfig={{
+                    ...mkConfig('#1a1203', '#1a1203', '#c99a4a'),
+                    decimalPlaces: 0,
+                  }}
+                  bezier
+                  style={styles.chart}
+                  yAxisSuffix=""
+                  fromZero
+                />
+              );
+            })()}
           </ScrollView>
         </View>
       )}
@@ -436,7 +492,7 @@ export default function AnalyticsScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={[styles.iconDot, { backgroundColor: 'rgba(166,127,250,0.12)' }]}>
-              <Ionicons name="body" size={16} color="#a67ffa" />
+              <Ionicons name="body" size={16} color="#8b7db8" />
             </View>
             <View>
               <Text style={styles.cardTitle}>Activity Breakdown</Text>
@@ -449,9 +505,9 @@ export default function AnalyticsScreen() {
             if (total === 0) return null;
             const items = [
               { key: 'sedentary', label: 'Sedentary', icon: 'body' as const, color: '#7a97c0' },
-              { key: 'walking', label: 'Walking', icon: 'walk' as const, color: '#00e5a0' },
-              { key: 'running', label: 'Running', icon: 'bicycle' as const, color: '#ff5370' },
-              { key: 'sleeping', label: 'Sleeping', icon: 'moon' as const, color: '#a67ffa' },
+              { key: 'walking', label: 'Walking', icon: 'walk' as const, color: '#5ba88a' },
+              { key: 'running', label: 'Running', icon: 'bicycle' as const, color: '#c75e6b' },
+              { key: 'sleeping', label: 'Sleeping', icon: 'moon' as const, color: '#8b7db8' },
             ];
             return items.map((item) => {
               const count = activityBreakdown[item.key] || 0;
@@ -484,7 +540,7 @@ export default function AnalyticsScreen() {
         </View>
         {hasAlertData && alertValues.some((v) => v > 0) ? (
           <BarChart
-            data={{ labels: alertLabels, datasets: [{ data: alertValues.length > 0 ? alertValues : [0] }] }}
+            data={{ labels: alertLabels, datasets: [{ data: alertValues }] }}
             width={CHART_WIDTH}
             height={200}
             chartConfig={alertConfig}
@@ -624,7 +680,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(166,127,250,0.4)',
   },
-  mlTagText: { fontSize: 9, fontWeight: '800', color: '#a67ffa', letterSpacing: 0.6 },
+  mlTagText: { fontSize: 9, fontWeight: '800', color: '#8b7db8', letterSpacing: 0.6 },
   actRow: {
     flexDirection: 'row',
     alignItems: 'center',

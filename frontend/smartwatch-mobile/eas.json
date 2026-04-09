@@ -13,11 +13,33 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://unnaovely-haggadistic-shandra.ngrok-free.dev"
       }
+    },
+    "beta": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "${APP_RUNNER_URL}"
+      },
+      "channel": "beta"
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "channel": "production"
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-services.json",
+        "track": "internal"
       }
     }
   }
